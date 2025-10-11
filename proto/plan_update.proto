@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package navsim.proto;
+
+import "world_tick.proto";
+
+message PlanUpdate {
+  uint64 tick_id = 1;
+  double stamp = 2;
+  repeated TrajectoryPoint trajectory = 3;
+}

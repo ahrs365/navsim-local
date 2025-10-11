@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package navsim.proto;
+
+message Pose2D {
+  double x = 1;
+  double y = 2;
+  double yaw = 3;
+}
+
+message Twist2D {
+  double vx = 1;
+  double vy = 2;
+  double omega = 3;
+}
+
+message TrajectoryPoint {
+  double x = 1;
+  double y = 2;
+  double yaw = 3;
+  double t = 4;
+}
+
+message GoalTolerance {
+  double pos = 1;
+  double yaw = 2;
+}
+
+message Goal {
+  Pose2D pose = 1;
+  GoalTolerance tol = 2;
+}
+
+message EgoState {
+  Pose2D pose = 1;
+  Twist2D twist = 2;
+}
+
+// 静态障碍物定义
+message Circle {
+  double x = 1;
+  double y = 2;
+  double r = 3;
+}
+
+message Polygon {
+  repeated Pose2D points = 1;
+}
+
+message StaticMap {
+  repeated Circle circles = 1;
+  repeated Polygon polygons = 2;
+  Pose2D origin = 3;
+  double resolution = 4;
+}
+
+// 动态障碍物定义
+message DynamicShape {
+  oneof shape {
+    Circle circle = 1;
+    Rectangle rectangle = 2;
+  }
+}
+
+message Rectangle {
+  double w = 1;  // width
+  double h = 2;  // height
+  double yaw = 3; // orientation
+}
+
+message DynamicObstacle {
+  string id = 1;
+  DynamicShape shape = 2;
+  Pose2D pose = 3;
+  Twist2D twist = 4;
+  string model = 5;
+}
+
+// 底盘配置定义
+message ChassisLimits {
+  double v_max = 1;      // 最大速度 (m/s)
+  double a_max = 2;      // 最大加速度 (m/s^2)
+  double omega_max = 3;  // 最大角速度 (rad/s)
+  double steer_max = 4;  // 最大转向角 (rad, 仅阿克曼)
+}
+
+// 底盘几何参数（用于可视化和碰撞检测）
+message ChassisGeometry {
+  // 车体尺寸
+  double body_length = 1;   // 车体长度 (m)
+  double body_width = 2;    // 车体宽度 (m)
+  double body_height = 3;   // 车体高度 (m)
+
+  // 轮子参数
+  double wheel_radius = 4;  // 轮半径 (m)
+  double wheel_width = 5;   // 轮宽度 (m)
+
+  // 悬挂参数（可选）
+  double front_overhang = 6;  // 前悬长度 (m)
+  double rear_overhang = 7;   // 后悬长度 (m)
+
+  // 特殊参数（根据底盘类型使用）
+  int32 caster_count = 8;     // 万向轮数量（差速底盘）
+  double track_width_ratio = 9;  // 履带宽度比例（履带底盘）
+}
+
+message ChassisConfig {
+  string model = 1;        // "differential", "ackermann", "tracked", "four_wheel"
+  double wheelbase = 2;    // 轴距 (m)
+  double track_width = 3;  // 轮距 (m)
+  ChassisLimits limits = 4;
+  ChassisGeometry geometry = 5;  // 几何参数
+}
+
+message WorldTick {
+  uint64 tick_id = 1;
+  double stamp = 2;
+  EgoState ego = 3;
+  Goal goal = 4;
+  repeated TrajectoryPoint last_plan = 5;
+  StaticMap static_map = 6;
+  repeated DynamicObstacle dynamic_obstacles = 7;
+  ChassisConfig chassis = 8;  // 底盘配置
+}

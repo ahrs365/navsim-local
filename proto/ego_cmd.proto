@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package navsim.proto;
+
+message EgoCmd {
+  double acceleration = 1;
+  double steering = 2;
+}

@@ -44,8 +44,8 @@ if(NOT Eigen3_FOUND)
     set(EIGEN3_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen")
 endif()
 
-# ========== Plugin System Library ==========
-add_library(navsim_plugin_system STATIC
+# ========== Plugin Framework Library (without concrete plugins) ==========
+add_library(navsim_plugin_framework STATIC
     # Plugin framework
     src/plugin/framework/perception_plugin_manager.cpp
     src/plugin/framework/planner_plugin_manager.cpp
@@ -55,27 +55,29 @@ add_library(navsim_plugin_system STATIC
     src/plugin/preprocessing/bev_extractor.cpp
     src/plugin/preprocessing/dynamic_predictor.cpp
     src/plugin/preprocessing/basic_converter.cpp
-    src/plugin/preprocessing/preprocessing_pipeline.cpp
-    # Concrete plugins
-    src/plugin/plugins/perception/grid_map_builder_plugin.cpp
-    src/plugin/plugins/planning/straight_line_planner_plugin.cpp
-    src/plugin/plugins/planning/astar_planner_plugin.cpp)
+    src/plugin/preprocessing/preprocessing_pipeline.cpp)
 
-target_include_directories(navsim_plugin_system
+target_include_directories(navsim_plugin_framework
     PUBLIC
       include
       ${CMAKE_CURRENT_BINARY_DIR}
       third_party/nlohmann)
 
 if(Eigen3_FOUND)
-    target_link_libraries(navsim_plugin_system PUBLIC Eigen3::Eigen)
-    target_include_directories(navsim_plugin_system PUBLIC ${EIGEN3_INCLUDE_DIRS})
+    target_link_libraries(navsim_plugin_framework PUBLIC Eigen3::Eigen)
+    target_include_directories(navsim_plugin_framework PUBLIC ${EIGEN3_INCLUDE_DIRS})
 else()
-    target_include_directories(navsim_plugin_system PUBLIC ${EIGEN3_INCLUDE_DIR})
+    target_include_directories(navsim_plugin_framework PUBLIC ${EIGEN3_INCLUDE_DIR})
 endif()
 
-target_link_libraries(navsim_plugin_system PUBLIC navsim_proto)
-target_compile_features(navsim_plugin_system PUBLIC cxx_std_17)
+target_link_libraries(navsim_plugin_framework PUBLIC navsim_proto)
+target_compile_features(navsim_plugin_framework PUBLIC cxx_std_17)
+
+# ========== Plugin Sub-projects ==========
+option(BUILD_PLUGINS "Build built-in plugins" ON)
+if(BUILD_PLUGINS)
+    add_subdirectory(plugins)
+endif()
 
 # ========== Core Library ==========
 add_library(navsim_planning STATIC
@@ -99,7 +101,8 @@ endif()
 target_link_libraries(navsim_planning
     PUBLIC
       navsim_proto
-      navsim_plugin_system)
+      navsim_plugin_framework
+      $<$<BOOL:${BUILD_PLUGINS}>:navsim_builtin_plugins>)
 target_compile_features(navsim_planning PUBLIC cxx_std_17)
 
 # ========== navsim_algo executable ==========

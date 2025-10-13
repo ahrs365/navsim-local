@@ -1,4 +1,4 @@
-#include "plugin/plugins/perception/grid_map_builder_plugin.hpp"
+#include "grid_map_builder_plugin.hpp"
 #include "plugin/framework/plugin_registry.hpp"
 #include <cmath>
 #include <chrono>

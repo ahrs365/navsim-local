@@ -1,4 +1,4 @@
-#include "plugin/plugins/planning/astar_planner_plugin.hpp"
+#include "astar_planner_plugin.hpp"
 #include "plugin/framework/plugin_registry.hpp"
 #include <cmath>
 #include <chrono>

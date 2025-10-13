@@ -1,4 +1,4 @@
-#include "plugin/plugins/planning/straight_line_planner_plugin.hpp"
+#include "straight_line_planner_plugin.hpp"
 #include "plugin/framework/plugin_registry.hpp"
 #include <cmath>
 #include <chrono>

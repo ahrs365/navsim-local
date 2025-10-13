@@ -1,4 +1,4 @@
-#include "algorithm_manager.hpp"
+#include "core/algorithm_manager.hpp"
 #include "world_tick.pb.h"
 #include "plan_update.pb.h"
 #include "ego_cmd.pb.h"
@@ -146,12 +146,8 @@ void testPluginSystem() {
   
   // 配置算法管理器使用插件系统
   AlgorithmManager::Config config;
-  config.use_plugin_system = true;
   config.primary_planner = "StraightLinePlanner";  // 使用直线规划器作为主规划器
   config.fallback_planner = "StraightLinePlanner";
-  config.enable_occupancy_grid = true;
-  config.enable_bev_obstacles = true;
-  config.enable_dynamic_prediction = true;
   config.verbose_logging = true;
   
   AlgorithmManager manager(config);
@@ -212,55 +208,7 @@ void testPluginSystem() {
   std::cout << "===================" << std::endl;
 }
 
-void testLegacySystem() {
-  std::cout << "\n========================================" << std::endl;
-  std::cout << "Testing LEGACY System" << std::endl;
-  std::cout << "========================================\n" << std::endl;
-  
-  // 配置算法管理器使用旧系统
-  AlgorithmManager::Config config;
-  config.use_plugin_system = false;
-  config.primary_planner = "AStarPlanner";
-  config.fallback_planner = "StraightLinePlanner";
-  config.enable_occupancy_grid = true;
-  config.enable_bev_obstacles = true;
-  config.enable_dynamic_prediction = true;
-  config.verbose_logging = true;
-  
-  AlgorithmManager manager(config);
-  
-  std::cout << "Initializing algorithm manager..." << std::endl;
-  if (!manager.initialize()) {
-    std::cerr << "Failed to initialize algorithm manager!" << std::endl;
-    return;
-  }
-  std::cout << "Initialization successful!\n" << std::endl;
-  
-  // 创建测试场景
-  auto world_tick = createTestWorldTick();
-  
-  // 执行规划
-  std::cout << "Running planning..." << std::endl;
-  proto::PlanUpdate plan;
-  proto::EgoCmd cmd;
-  auto deadline = std::chrono::milliseconds(100);
-  
-  auto start_time = std::chrono::steady_clock::now();
-  bool success = manager.process(world_tick, deadline, plan, cmd);
-  auto end_time = std::chrono::steady_clock::now();
-  
-  auto duration = std::chrono::duration<double, std::milli>(end_time - start_time).count();
-  
-  std::cout << "\n=== Planning Result ===" << std::endl;
-  std::cout << "Success: " << (success ? "YES" : "NO") << std::endl;
-  std::cout << "Computation time: " << std::fixed << std::setprecision(2) << duration << " ms" << std::endl;
-  std::cout << "=======================" << std::endl;
-  
-  if (success) {
-    printPlanUpdate(plan);
-    printEgoCmd(cmd);
-  }
-}
+
 
 int main() {
   std::cout << "\n╔════════════════════════════════════════╗" << std::endl;
@@ -269,12 +217,7 @@ int main() {
   
   // 测试插件系统
   testPluginSystem();
-  
-  std::cout << "\n\n";
-  
-  // 测试旧系统（对比）
-  testLegacySystem();
-  
+
   std::cout << "\n\n╔════════════════════════════════════════╗" << std::endl;
   std::cout << "║         All Tests Completed!           ║" << std::endl;
   std::cout << "╚════════════════════════════════════════╝\n" << std::endl;

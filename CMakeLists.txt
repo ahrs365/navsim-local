@@ -46,17 +46,20 @@ endif()
 
 # ========== Plugin System Library ==========
 add_library(navsim_plugin_system STATIC
-    src/plugin/perception_plugin_manager.cpp
-    src/plugin/planner_plugin_manager.cpp
-    src/plugin/config_loader.cpp
-    src/plugin/plugin_init.cpp
-    src/perception/bev_extractor.cpp
-    src/perception/dynamic_predictor.cpp
-    src/perception/basic_converter.cpp
-    src/perception/preprocessing_pipeline.cpp
-    plugins/perception/grid_map_builder_plugin.cpp
-    plugins/planning/straight_line_planner_plugin.cpp
-    plugins/planning/astar_planner_plugin.cpp)
+    # Plugin framework
+    src/plugin/framework/perception_plugin_manager.cpp
+    src/plugin/framework/planner_plugin_manager.cpp
+    src/plugin/framework/config_loader.cpp
+    src/plugin/framework/plugin_init.cpp
+    # Preprocessing
+    src/plugin/preprocessing/bev_extractor.cpp
+    src/plugin/preprocessing/dynamic_predictor.cpp
+    src/plugin/preprocessing/basic_converter.cpp
+    src/plugin/preprocessing/preprocessing_pipeline.cpp
+    # Concrete plugins
+    src/plugin/plugins/perception/grid_map_builder_plugin.cpp
+    src/plugin/plugins/planning/straight_line_planner_plugin.cpp
+    src/plugin/plugins/planning/astar_planner_plugin.cpp)
 
 target_include_directories(navsim_plugin_system
     PUBLIC
@@ -74,13 +77,11 @@ endif()
 target_link_libraries(navsim_plugin_system PUBLIC navsim_proto)
 target_compile_features(navsim_plugin_system PUBLIC cxx_std_17)
 
-# ========== Planning and Perception Libraries ==========
+# ========== Core Library ==========
 add_library(navsim_planning STATIC
-    src/planning_context.cpp
-    src/perception_processor.cpp
-    src/planner_interface.cpp
-    src/algorithm_manager.cpp
-    src/websocket_visualizer.cpp)
+    src/core/planning_context.cpp
+    src/core/algorithm_manager.cpp
+    src/core/websocket_visualizer.cpp)
 
 target_include_directories(navsim_planning
     PUBLIC
@@ -103,9 +104,8 @@ target_compile_features(navsim_planning PUBLIC cxx_std_17)
 
 # ========== navsim_algo executable ==========
 add_executable(navsim_algo
-    src/main.cpp
-    src/planner.cpp
-    src/bridge.cpp)
+    src/core/main.cpp
+    src/core/bridge.cpp)
 
 target_include_directories(navsim_algo
     PRIVATE
@@ -130,7 +130,7 @@ target_compile_definitions(navsim_algo PRIVATE
 # ========== Test Executable ==========
 add_executable(test_plugin_system
     tests/test_plugin_system.cpp
-    src/bridge.cpp)  # 添加 bridge.cpp 以解决链接问题
+    src/core/bridge.cpp)  # 添加 bridge.cpp 以解决链接问题
 
 target_include_directories(test_plugin_system
     PRIVATE

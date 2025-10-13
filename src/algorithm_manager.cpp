@@ -308,6 +308,11 @@ bool AlgorithmManager::processWithPluginSystem(const proto::WorldTick& world_tic
   auto perception_start = std::chrono::steady_clock::now();
 
   planning::PlanningContext context;
+  // 复制基础数据到 context
+  context.ego = perception_input.ego;
+  context.task = perception_input.task;
+  context.dynamic_obstacles = perception_input.dynamic_obstacles;
+
   bool perception_success = perception_plugin_manager_->process(perception_input, context);
 
   auto perception_end = std::chrono::steady_clock::now();

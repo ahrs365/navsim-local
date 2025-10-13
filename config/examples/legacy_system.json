@@ -1,0 +1,31 @@
+{
+  "description": "Legacy system configuration example (backward compatibility)",
+  
+  "system": {
+    "use_plugin_system": false,
+    "max_computation_time_ms": 25.0,
+    "verbose_logging": false
+  },
+  
+  "preprocessing": {
+    "enable_bev_obstacles": true,
+    "enable_dynamic_prediction": true,
+    "bev_extractor": {
+      "detection_range": 50.0,
+      "confidence_threshold": 0.5
+    },
+    "dynamic_predictor": {
+      "prediction_horizon": 3.0,
+      "prediction_model": "constant_velocity",
+      "time_step": 0.1
+    }
+  },
+  
+  "planning": {
+    "primary_planner": "AStarPlanner",
+    "fallback_planner": "StraightLinePlanner",
+    "enable_fallback": true,
+    "enable_occupancy_grid": true
+  }
+}
+

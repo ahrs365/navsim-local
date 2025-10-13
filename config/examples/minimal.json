@@ -1,0 +1,43 @@
+{
+  "version": "1.0",
+  "description": "Minimal configuration - only essential plugins",
+  
+  "perception": {
+    "preprocessing": {
+      "bev_extraction": {
+        "detection_range": 30.0,
+        "confidence_threshold": 0.5
+      },
+      "dynamic_prediction": {
+        "prediction_horizon": 3.0,
+        "time_step": 0.2
+      }
+    },
+    "plugins": [
+      {
+        "name": "GridMapBuilderPlugin",
+        "enabled": true,
+        "priority": 1,
+        "params": {
+          "resolution": 0.2,
+          "map_width": 50.0,
+          "map_height": 50.0,
+          "inflation_radius": 0.3
+        }
+      }
+    ]
+  },
+  
+  "planning": {
+    "primary_planner": "StraightLinePlannerPlugin",
+    "fallback_planner": "StraightLinePlannerPlugin",
+    "enable_fallback": false,
+    
+    "planners": {
+      "StraightLinePlannerPlugin": {
+        "default_velocity": 2.0
+      }
+    }
+  }
+}
+

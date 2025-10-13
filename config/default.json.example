@@ -1,0 +1,90 @@
+{
+  "version": "1.0",
+  "description": "Default configuration for navsim-local plugin system",
+  
+  "algorithm": {
+    "max_computation_time_ms": 25.0,
+    "verbose_logging": false
+  },
+  
+  "perception": {
+    "preprocessing": {
+      "description": "Common preprocessing layer (BEV extraction + dynamic prediction)",
+      "bev_extraction": {
+        "detection_range": 50.0,
+        "confidence_threshold": 0.5,
+        "include_static": true,
+        "include_dynamic": true
+      },
+      "dynamic_prediction": {
+        "prediction_horizon": 5.0,
+        "time_step": 0.1,
+        "max_trajectories": 3,
+        "prediction_model": "constant_velocity"
+      }
+    },
+
+    "plugins": [
+      {
+        "name": "GridMapBuilderPlugin",
+        "enabled": true,
+        "priority": 1,
+        "description": "Builds occupancy grid from BEV obstacles",
+        "params": {
+          "resolution": 0.1,
+          "map_width": 100.0,
+          "map_height": 100.0,
+          "inflation_radius": 0.3,
+          "obstacle_cost": 100
+        }
+      },
+      {
+        "name": "ESDFBuilderPlugin",
+        "enabled": false,
+        "priority": 2,
+        "description": "Builds ESDF distance field from BEV obstacles",
+        "params": {
+          "resolution": 0.1,
+          "max_distance": 10.0
+        }
+      }
+    ]
+  },
+  
+  "planning": {
+    "primary_planner": "StraightLinePlannerPlugin",
+    "fallback_planner": "StraightLinePlannerPlugin",
+    "enable_fallback": true,
+    
+    "planners": {
+      "StraightLinePlannerPlugin": {
+        "time_step": 0.1,
+        "default_velocity": 2.0,
+        "max_acceleration": 2.0,
+        "arrival_tolerance": 0.5
+      },
+      "AStarPlannerPlugin": {
+        "time_step": 0.1,
+        "heuristic_weight": 1.0,
+        "step_size": 0.5,
+        "max_iterations": 10000,
+        "goal_tolerance": 0.5
+      },
+      "OptimizationPlannerPlugin": {
+        "time_step": 0.1,
+        "max_iterations": 100,
+        "convergence_tolerance": 0.001,
+        "smoothness_weight": 1.0,
+        "obstacle_weight": 10.0,
+        "goal_weight": 5.0
+      }
+    }
+  },
+  
+  "visualization": {
+    "enabled": false,
+    "send_perception_debug": false,
+    "send_planning_debug": false
+  }
+}
+

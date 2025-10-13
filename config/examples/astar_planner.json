@@ -1,0 +1,70 @@
+{
+  "version": "1.0",
+  "description": "Configuration using A* planner with occupancy grid",
+  
+  "algorithm": {
+    "max_computation_time_ms": 25.0,
+    "verbose_logging": false
+  },
+  
+  "perception": {
+    "preprocessing": {
+      "bev_extraction": {
+        "detection_range": 50.0,
+        "confidence_threshold": 0.5,
+        "include_static": true,
+        "include_dynamic": true
+      },
+      "dynamic_prediction": {
+        "prediction_horizon": 3.0,
+        "time_step": 0.1,
+        "max_trajectories": 1,
+        "prediction_model": "constant_velocity"
+      }
+    },
+
+    "plugins": [
+      {
+        "name": "GridMapBuilderPlugin",
+        "enabled": true,
+        "priority": 1,
+        "params": {
+          "resolution": 0.1,
+          "map_width": 100.0,
+          "map_height": 100.0,
+          "inflation_radius": 0.5,
+          "obstacle_cost": 100
+        }
+      }
+    ]
+  },
+  
+  "planning": {
+    "primary_planner": "AStarPlannerPlugin",
+    "fallback_planner": "StraightLinePlannerPlugin",
+    "enable_fallback": true,
+    
+    "planners": {
+      "AStarPlannerPlugin": {
+        "time_step": 0.1,
+        "heuristic_weight": 1.2,
+        "step_size": 0.5,
+        "max_iterations": 15000,
+        "goal_tolerance": 0.3
+      },
+      "StraightLinePlannerPlugin": {
+        "time_step": 0.1,
+        "default_velocity": 2.0,
+        "max_acceleration": 2.0,
+        "arrival_tolerance": 0.5
+      }
+    }
+  },
+  
+  "visualization": {
+    "enabled": false,
+    "send_perception_debug": false,
+    "send_planning_debug": false
+  }
+}
+

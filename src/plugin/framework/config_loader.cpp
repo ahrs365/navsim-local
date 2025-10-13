@@ -48,6 +48,32 @@ bool ConfigLoader::loadFromJson(const nlohmann::json& json) {
       return false;
     }
   }
+
+  // 支持旧格式：perception_plugins 直接在根级别
+  if (json.contains("perception_plugins")) {
+    const auto& plugins = json["perception_plugins"];
+    if (plugins.is_array()) {
+      perception_plugin_configs_.clear();
+      for (const auto& plugin_json : plugins) {
+        PerceptionPluginConfig config;
+        if (!plugin_json.contains("name")) {
+          std::cerr << "[ConfigLoader] Plugin config missing 'name' field" << std::endl;
+          return false;
+        }
+        config.name = plugin_json["name"];
+        if (plugin_json.contains("enabled")) {
+          config.enabled = plugin_json["enabled"];
+        }
+        if (plugin_json.contains("priority")) {
+          config.priority = plugin_json["priority"];
+        }
+        if (plugin_json.contains("params")) {
+          config.params = plugin_json["params"];
+        }
+        perception_plugin_configs_.push_back(config);
+      }
+    }
+  }
   
   // 解析规划配置
   if (json.contains("planning")) {

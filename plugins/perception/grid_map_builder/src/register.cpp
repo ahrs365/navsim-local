@@ -25,7 +25,14 @@ void registerGridMapBuilderPlugin() {
 } // namespace plugins
 } // namespace navsim
 
-// 静态初始化器 - 确保在程序启动时注册
+// 导出 C 风格的注册函数，供动态加载器使用
+extern "C" {
+  void registerGridMapBuilderPlugin() {
+    navsim::plugins::perception::registerGridMapBuilderPlugin();
+  }
+}
+
+// 静态初始化器 - 确保在程序启动时注册（用于静态链接）
 namespace {
 struct GridMapBuilderPluginInitializer {
   GridMapBuilderPluginInitializer() {

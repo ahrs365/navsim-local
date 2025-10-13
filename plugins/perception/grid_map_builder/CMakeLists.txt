@@ -3,9 +3,16 @@
 # This plugin builds an occupancy grid map from BEV obstacles.
 
 # ========== 插件库 ==========
-add_library(grid_map_builder_plugin STATIC
+# 编译为动态库（共享库），支持运行时加载
+add_library(grid_map_builder_plugin SHARED
     src/grid_map_builder_plugin.cpp
     src/register.cpp)
+
+# 设置动态库输出名称和版本
+set_target_properties(grid_map_builder_plugin PROPERTIES
+    OUTPUT_NAME "grid_map_builder_plugin"
+    VERSION 1.0.0
+    SOVERSION 1)
 
 # ========== 包含目录 ==========
 target_include_directories(grid_map_builder_plugin

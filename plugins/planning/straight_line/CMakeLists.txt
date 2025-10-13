@@ -3,9 +3,16 @@
 # A simple geometric planner that generates straight-line trajectories.
 
 # ========== 插件库 ==========
-add_library(straight_line_planner_plugin STATIC
+# 编译为动态库（共享库），支持运行时加载
+add_library(straight_line_planner_plugin SHARED
     src/straight_line_planner_plugin.cpp
     src/register.cpp)
+
+# 设置动态库输出名称和版本
+set_target_properties(straight_line_planner_plugin PROPERTIES
+    OUTPUT_NAME "straight_line_planner_plugin"
+    VERSION 1.0.0
+    SOVERSION 1)
 
 # ========== 包含目录 ==========
 target_include_directories(straight_line_planner_plugin

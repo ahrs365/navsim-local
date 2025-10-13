@@ -5,6 +5,7 @@
 #include "plugin/data/planning_result.hpp"
 #include "plugin/framework/plugin_init.hpp"
 #include "plugin/framework/plugin_loader.hpp"
+#include "plugin/framework/dynamic_plugin_loader.hpp"
 #include "plugin/preprocessing/preprocessing.hpp"
 #include <iostream>
 #include <iomanip>
@@ -166,10 +167,26 @@ void AlgorithmManager::setupPluginSystem() {
   // 0. 初始化所有插件
   plugin::initializeAllPlugins();
 
-  // 0.1 加载内置插件
-  #ifdef BUILD_PLUGINS
-  plugins::loadAllBuiltinPlugins();
-  #endif
+  // 0.1 动态加载插件（从配置文件）
+  std::cout << "[AlgorithmManager] Loading plugins dynamically from config..." << std::endl;
+  plugin::DynamicPluginLoader plugin_loader;
+
+  // 添加插件搜索路径
+  plugin_loader.addSearchPath("./build/plugins");
+  plugin_loader.addSearchPath("./plugins");
+
+  // 从配置文件加载插件
+  std::string config_file = config_.config_file.empty() ? "config/default.json" : config_.config_file;
+  int loaded_count = plugin_loader.loadPluginsFromConfig(config_file);
+  std::cout << "[AlgorithmManager] Dynamically loaded " << loaded_count << " plugins" << std::endl;
+
+  // 0.2 如果动态加载失败，回退到静态链接的插件
+  if (loaded_count == 0) {
+    std::cout << "[AlgorithmManager] No plugins loaded dynamically, using built-in plugins..." << std::endl;
+    #ifdef BUILD_PLUGINS
+    plugins::loadAllBuiltinPlugins();
+    #endif
+  }
 
   // 1. 创建感知插件管理器
   perception_plugin_manager_ = std::make_unique<plugin::PerceptionPluginManager>();

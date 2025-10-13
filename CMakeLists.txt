@@ -51,6 +51,7 @@ add_library(navsim_plugin_framework STATIC
     src/plugin/framework/planner_plugin_manager.cpp
     src/plugin/framework/config_loader.cpp
     src/plugin/framework/plugin_init.cpp
+    src/plugin/framework/dynamic_plugin_loader.cpp
     # Preprocessing
     src/plugin/preprocessing/bev_extractor.cpp
     src/plugin/preprocessing/dynamic_predictor.cpp
@@ -70,7 +71,11 @@ else()
     target_include_directories(navsim_plugin_framework PUBLIC ${EIGEN3_INCLUDE_DIR})
 endif()
 
-target_link_libraries(navsim_plugin_framework PUBLIC navsim_proto)
+target_link_libraries(navsim_plugin_framework
+    PUBLIC
+        navsim_proto
+    PRIVATE
+        ${CMAKE_DL_LIBS})  # 链接 libdl (dlopen/dlsym)
 target_compile_features(navsim_plugin_framework PUBLIC cxx_std_17)
 
 # ========== Plugin Sub-projects ==========

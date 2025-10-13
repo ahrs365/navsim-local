@@ -1,12 +1,25 @@
 #pragma once
 
-#include "perception_processor.hpp"
-#include "planner_interface.hpp"
 #include "world_tick.pb.h"
 #include "plan_update.pb.h"
 #include "ego_cmd.pb.h"
 #include <memory>
 #include <chrono>
+#include <string>
+
+// 前向声明以避免头文件冲突
+namespace navsim {
+namespace perception {
+  class PerceptionPipeline;
+}
+namespace planning {
+  class PlannerManager;
+}
+namespace plugin {
+  class PerceptionPluginManager;
+  class PlannerPluginManager;
+}
+}
 
 namespace navsim {
 
@@ -20,12 +33,16 @@ class Bridge;
 class AlgorithmManager {
 public:
   struct Config {
-    // 感知配置
+    // 插件系统配置
+    bool use_plugin_system = true;         // 是否使用插件系统
+    std::string config_file = "";          // 插件配置文件路径（为空则使用默认配置）
+
+    // 感知配置（旧系统，兼容性）
     bool enable_occupancy_grid = true;
     bool enable_bev_obstacles = true;
     bool enable_dynamic_prediction = true;
 
-    // 规划配置
+    // 规划配置（旧系统，兼容性）
     std::string primary_planner = "StraightLinePlanner";
     std::string fallback_planner = "StraightLinePlanner";
     bool enable_planner_fallback = true;
@@ -96,7 +113,11 @@ private:
   Config config_;
   Statistics stats_;
 
-  // 模块实例
+  // 插件系统模块
+  std::unique_ptr<plugin::PerceptionPluginManager> perception_plugin_manager_;
+  std::unique_ptr<plugin::PlannerPluginManager> planner_plugin_manager_;
+
+  // 旧系统模块（兼容性）
   std::unique_ptr<perception::PerceptionPipeline> perception_pipeline_;
   std::unique_ptr<planning::PlannerManager> planner_manager_;
 
@@ -104,9 +125,22 @@ private:
   Bridge* bridge_ = nullptr;
 
   // 内部函数
+  void setupPluginSystem();
   void setupPerceptionPipeline();
   void setupPlannerManager();
   void updateStatistics(double total_time, double perception_time, double planning_time, bool success);
+
+  // 插件系统处理函数
+  bool processWithPluginSystem(const proto::WorldTick& world_tick,
+                              std::chrono::milliseconds deadline,
+                              proto::PlanUpdate& plan_update,
+                              proto::EgoCmd& ego_cmd);
+
+  // 旧系统处理函数
+  bool processWithLegacySystem(const proto::WorldTick& world_tick,
+                              std::chrono::milliseconds deadline,
+                              proto::PlanUpdate& plan_update,
+                              proto::EgoCmd& ego_cmd);
 };
 
 } // namespace navsim

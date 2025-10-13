@@ -250,6 +250,14 @@ struct PlanningContext {
     }
     return nullptr;
   }
+
+  bool hasCustomData(const std::string& key) const {
+    return custom_data.find(key) != custom_data.end();
+  }
+
+  void clearCustomData() {
+    custom_data.clear();
+  }
 };
 
 } // namespace planning

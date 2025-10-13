@@ -63,10 +63,22 @@ int main(int argc, char* argv[]) {
 
   // 初始化算法管理器
   navsim::AlgorithmManager::Config algo_config;
-  algo_config.primary_planner = "StraightLinePlanner";  // 可以从命令行参数配置
+
+  // 检查环境变量以决定使用哪个系统
+  const char* use_plugin_env = std::getenv("USE_PLUGIN_SYSTEM");
+  algo_config.use_plugin_system = (use_plugin_env && std::string(use_plugin_env) == "1");
+
+  algo_config.primary_planner = "AStarPlanner";  // 使用 A* 作为主规划器
+  algo_config.fallback_planner = "StraightLinePlanner";  // 使用直线作为降级规划器
   algo_config.enable_occupancy_grid = true;
   algo_config.enable_bev_obstacles = true;
-  algo_config.verbose_logging = false;  // 可以通过环境变量控制
+  algo_config.enable_dynamic_prediction = true;
+
+  // 检查环境变量以决定是否启用详细日志
+  const char* verbose_env = std::getenv("VERBOSE");
+  algo_config.verbose_logging = (verbose_env && std::string(verbose_env) == "1");
+
+  std::cout << "Using " << (algo_config.use_plugin_system ? "PLUGIN" : "LEGACY") << " system" << std::endl;
 
   navsim::AlgorithmManager algorithm_manager(algo_config);
   if (!algorithm_manager.initialize()) {

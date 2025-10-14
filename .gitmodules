@@ -1,3 +1,7 @@
 [submodule "third_party/ixwebsocket"]
 	path = third_party/ixwebsocket
 	url = https://github.com/machinezone/IXWebSocket.git
+
+[submodule "third_party/imgui"]
+	path = third_party/imgui
+	url = https://github.com/ocornut/imgui.git

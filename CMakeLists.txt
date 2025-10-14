@@ -86,11 +86,64 @@ if(BUILD_PLUGINS)
     add_compile_definitions(BUILD_PLUGINS)
 endif()
 
+# ========== Visualization (ImGui + SDL2) ==========
+option(ENABLE_VISUALIZATION "Enable ImGui visualization" OFF)
+if(ENABLE_VISUALIZATION)
+    message(STATUS "Visualization enabled")
+
+    # 查找 SDL2
+    find_package(SDL2 REQUIRED)
+
+    # 添加 ImGui（假设在 third_party/imgui）
+    set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
+    if(NOT EXISTS ${IMGUI_DIR})
+        message(FATAL_ERROR "ImGui not found at ${IMGUI_DIR}. Please run: cd third_party && git clone https://github.com/ocornut/imgui.git")
+    endif()
+
+    # 创建 ImGui 库 - 使用 SDL_Renderer 后端（不依赖 OpenGL）
+    add_library(imgui STATIC
+        ${IMGUI_DIR}/imgui.cpp
+        ${IMGUI_DIR}/imgui_demo.cpp
+        ${IMGUI_DIR}/imgui_draw.cpp
+        ${IMGUI_DIR}/imgui_tables.cpp
+        ${IMGUI_DIR}/imgui_widgets.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_sdlrenderer2.cpp  # 使用 SDL_Renderer!
+    )
+
+    target_include_directories(imgui PUBLIC
+        ${IMGUI_DIR}
+        ${IMGUI_DIR}/backends
+        ${SDL2_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(imgui PUBLIC
+        ${SDL2_LIBRARIES}
+        ${CMAKE_DL_LIBS}
+    )
+
+    # 不再需要 OpenGL!
+
+    # 定义宏
+    add_compile_definitions(ENABLE_VISUALIZATION)
+endif()
+
 # ========== Core Library ==========
-add_library(navsim_planning STATIC
+set(NAVSIM_PLANNING_SOURCES
     src/core/planning_context.cpp
     src/core/algorithm_manager.cpp
-    src/core/websocket_visualizer.cpp)
+    src/core/websocket_visualizer.cpp
+    src/viz/visualizer_factory.cpp
+)
+
+# 添加可视化源文件（如果启用）
+if(ENABLE_VISUALIZATION)
+    list(APPEND NAVSIM_PLANNING_SOURCES
+        src/viz/imgui_visualizer.cpp
+    )
+endif()
+
+add_library(navsim_planning STATIC ${NAVSIM_PLANNING_SOURCES})
 
 target_include_directories(navsim_planning
     PUBLIC
@@ -109,7 +162,9 @@ target_link_libraries(navsim_planning
     PUBLIC
       navsim_proto
       navsim_plugin_framework
-      $<$<BOOL:${BUILD_PLUGINS}>:navsim_builtin_plugins>)
+      $<$<BOOL:${BUILD_PLUGINS}>:navsim_builtin_plugins>
+      $<$<BOOL:${ENABLE_VISUALIZATION}>:imgui>
+)
 target_compile_features(navsim_planning PUBLIC cxx_std_17)
 
 # ========== navsim_algo executable ==========

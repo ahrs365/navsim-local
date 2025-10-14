@@ -1,0 +1,56 @@
+{
+  "algorithm": {
+    "primary_planner": "AStarPlanner",
+    "fallback_planner": "StraightLinePlanner",
+    "enable_planner_fallback": true,
+    "max_computation_time_ms": 25.0,
+    "verbose_logging": true,
+    "enable_visualization": true
+  },
+  "perception": {
+    "preprocessing": {
+      "bev_extraction": {
+        "enabled": true,
+        "static_obstacle_inflation": 0.2,
+        "dynamic_obstacle_inflation": 0.3
+      },
+      "dynamic_prediction": {
+        "enabled": true,
+        "prediction_horizon": 5.0,
+        "time_step": 0.1
+      }
+    },
+    "plugins": [
+      {
+        "name": "GridMapBuilder",
+        "enabled": true,
+        "priority": 100,
+        "params": {
+          "resolution": 0.1,
+          "map_width": 100.0,
+          "map_height": 100.0,
+          "obstacle_cost": 100,
+          "inflation_radius": 0.5
+        }
+      }
+    ]
+  },
+  "planning": {
+    "StraightLinePlanner": {
+      "default_velocity": 1.5,
+      "time_step": 0.1,
+      "planning_horizon": 5.0,
+      "use_trapezoidal_profile": true,
+      "max_acceleration": 1.0
+    },
+    "AStarPlanner": {
+      "time_step": 0.1,
+      "heuristic_weight": 1.2,
+      "step_size": 0.5,
+      "max_iterations": 10000,
+      "goal_tolerance": 0.5,
+      "default_velocity": 1.5
+    }
+  }
+}
+

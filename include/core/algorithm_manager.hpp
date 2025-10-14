@@ -1,5 +1,6 @@
 #pragma once
 
+#include "viz/visualizer_interface.hpp"
 #include "world_tick.pb.h"
 #include "plan_update.pb.h"
 #include "ego_cmd.pb.h"
@@ -12,6 +13,9 @@ namespace navsim {
 namespace plugin {
   class PerceptionPluginManager;
   class PlannerPluginManager;
+}
+namespace viz {
+  class IVisualizer;
 }
 }
 
@@ -38,6 +42,9 @@ public:
     // 性能配置
     double max_computation_time_ms = 25.0;  // 最大计算时间
     bool verbose_logging = false;           // 详细日志
+
+    // 可视化配置
+    bool enable_visualization = false;      // 启用实时可视化
   };
 
   AlgorithmManager();
@@ -95,7 +102,12 @@ public:
   /**
    * @brief 设置Bridge引用（用于WebSocket可视化）
    */
-  void setBridge(Bridge* bridge);
+  void setBridge(Bridge* bridge, const std::string& connection_label = "");
+
+  /**
+   * @brief 在等待数据时渲染空闲帧，确保窗口保持响应
+   */
+  void renderIdleFrame();
 
 private:
   Config config_;
@@ -107,6 +119,12 @@ private:
 
   // Bridge引用（用于感知调试数据发送）
   Bridge* bridge_ = nullptr;
+
+  // 可视化器
+  std::unique_ptr<viz::IVisualizer> visualizer_;
+  viz::IVisualizer::SystemInfo system_info_cache_;
+  std::string connection_label_;
+  std::string active_config_file_;
 
   // 内部函数
   void setupPluginSystem();

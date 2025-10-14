@@ -8,12 +8,14 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <fstream>
 
 #include "core/bridge.hpp"
 #include "core/algorithm_manager.hpp"
 #include "world_tick.pb.h"
 #include "plan_update.pb.h"
 #include "ego_cmd.pb.h"
+#include <json.hpp>
 
 namespace navsim {
 namespace {
@@ -34,8 +36,51 @@ void signal_handler(int) {
 }
 
 void print_usage(const char* prog) {
-  std::cerr << "Usage: " << prog << " <ws_url> <room_id>" << std::endl;
+  std::cerr << "Usage: " << prog << " <ws_url> <room_id> [--config=<path>]" << std::endl;
   std::cerr << "Example: " << prog << " ws://127.0.0.1:8080/ws demo" << std::endl;
+  std::cerr << "         " << prog << " ws://127.0.0.1:8080/ws demo --config=config/with_visualization.json" << std::endl;
+}
+
+// 从配置文件加载算法配置
+bool load_config_from_file(const std::string& config_path, navsim::AlgorithmManager::Config& config) {
+  std::ifstream file(config_path);
+  if (!file.is_open()) {
+    std::cerr << "Failed to open config file: " << config_path << std::endl;
+    return false;
+  }
+
+  try {
+    nlohmann::json j;
+    file >> j;
+
+    if (j.contains("algorithm")) {
+      auto& algo = j["algorithm"];
+      if (algo.contains("primary_planner")) {
+        config.primary_planner = algo["primary_planner"].get<std::string>();
+      }
+      if (algo.contains("fallback_planner")) {
+        config.fallback_planner = algo["fallback_planner"].get<std::string>();
+      }
+      if (algo.contains("enable_planner_fallback")) {
+        config.enable_planner_fallback = algo["enable_planner_fallback"].get<bool>();
+      }
+      if (algo.contains("max_computation_time_ms")) {
+        config.max_computation_time_ms = algo["max_computation_time_ms"].get<double>();
+      }
+      if (algo.contains("verbose_logging")) {
+        config.verbose_logging = algo["verbose_logging"].get<bool>();
+      }
+      if (algo.contains("enable_visualization")) {
+        config.enable_visualization = algo["enable_visualization"].get<bool>();
+      }
+    }
+
+    std::cout << "✅ Loaded config from: " << config_path << std::endl;
+    return true;
+  } catch (const std::exception& e) {
+    std::cerr << "Failed to parse config file: " << e.what() << std::endl;
+    return false;
+  }
 }
 
 }  // namespace
@@ -45,17 +90,29 @@ int main(int argc, char* argv[]) {
   using namespace std::chrono_literals;
 
   // 解析命令行参数
-  if (argc != 3) {
+  if (argc < 3) {
     navsim::print_usage(argv[0]);
     return 1;
   }
 
   std::string ws_url = argv[1];
   std::string room_id = argv[2];
+  std::string config_file;
+
+  // 解析可选参数
+  for (int i = 3; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg.find("--config=") == 0) {
+      config_file = arg.substr(9);
+    }
+  }
 
   std::cout << "=== NavSim Local Algorithm ===" << std::endl;
   std::cout << "WebSocket URL: " << ws_url << std::endl;
   std::cout << "Room ID: " << room_id << std::endl;
+  if (!config_file.empty()) {
+    std::cout << "Config File: " << config_file << std::endl;
+  }
   std::cout << "===============================" << std::endl;
 
   std::signal(SIGINT, navsim::signal_handler);
@@ -63,12 +120,21 @@ int main(int argc, char* argv[]) {
   // 初始化算法管理器
   navsim::AlgorithmManager::Config algo_config;
 
-  algo_config.primary_planner = "StraightLinePlanner";  // 使用直线作为主规划器
-  algo_config.fallback_planner = "StraightLinePlanner";  // 使用直线作为降级规划器
+  // 默认配置
+  algo_config.primary_planner = "StraightLinePlanner";
+  algo_config.fallback_planner = "StraightLinePlanner";
+  algo_config.enable_visualization = false;  // 默认禁用
+
+  // 从配置文件加载（如果提供）
+  if (!config_file.empty()) {
+    navsim::load_config_from_file(config_file, algo_config);
+  }
 
   // 检查环境变量以决定是否启用详细日志
   const char* verbose_env = std::getenv("VERBOSE");
-  algo_config.verbose_logging = (verbose_env && std::string(verbose_env) == "1");
+  if (verbose_env && std::string(verbose_env) == "1") {
+    algo_config.verbose_logging = true;
+  }
 
   std::cout << "Using PLUGIN system" << std::endl;
 
@@ -83,7 +149,7 @@ int main(int argc, char* argv[]) {
   navsim::SharedState shared;
 
   // 设置Bridge引用以支持WebSocket可视化
-  algorithm_manager.setBridge(&bridge);
+  algorithm_manager.setBridge(&bridge, ws_url + "?room=" + room_id);
 
   // 连接到 WebSocket 服务器
   bridge.connect(ws_url, room_id);
@@ -107,6 +173,7 @@ int main(int argc, char* argv[]) {
           break;
         }
         if (!shared.latest_world) {
+          algorithm_manager.renderIdleFrame();
           continue;  // 超时，继续等待
         }
         world = *shared.latest_world;
@@ -177,10 +244,16 @@ int main(int argc, char* argv[]) {
     shared.cv.notify_one();
   });
 
-  // 主线程等待中断信号
+  // 主线程等待中断信号或可视化窗口关闭
   std::cout << "[Main] Waiting for world_tick messages... (Press Ctrl+C to exit)" << std::endl;
   while (!navsim::g_interrupt.load()) {
     std::this_thread::sleep_for(100ms);
+
+#ifdef ENABLE_VISUALIZATION
+    // 检查可视化窗口是否关闭
+    // 注意：这需要在 AlgorithmManager 中暴露 visualizer 的 shouldClose() 方法
+    // 暂时先不实现，因为可视化器在 planner_thread 中使用
+#endif
   }
 
   // 清理

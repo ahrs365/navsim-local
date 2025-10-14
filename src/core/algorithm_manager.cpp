@@ -1,5 +1,6 @@
 #include "core/algorithm_manager.hpp"
 #include "plugin/framework/perception_plugin_manager.hpp"
+#include "core/bridge.hpp"
 #include "plugin/framework/planner_plugin_manager.hpp"
 #include "plugin/data/perception_input.hpp"
 #include "plugin/data/planning_result.hpp"
@@ -7,9 +8,11 @@
 #include "plugin/framework/plugin_loader.hpp"
 #include "plugin/framework/dynamic_plugin_loader.hpp"
 #include "plugin/preprocessing/preprocessing.hpp"
+#include "viz/visualizer_interface.hpp"
 #include <iostream>
 #include <iomanip>
 #include <fstream>
+#include <sstream>
 
 namespace navsim {
 
@@ -25,10 +28,91 @@ bool AlgorithmManager::initialize() {
     std::cout << "[AlgorithmManager] Initializing with plugin system..." << std::endl;
     setupPluginSystem();
 
+    // 初始化可视化器
+    if (config_.enable_visualization) {
+      std::cout << "[AlgorithmManager] Initializing visualizer..." << std::endl;
+      visualizer_ = viz::createVisualizer(true);
+      if (visualizer_ && visualizer_->initialize()) {
+        std::cout << "[AlgorithmManager] Visualizer initialized successfully" << std::endl;
+      } else {
+        std::cerr << "[AlgorithmManager] Failed to initialize visualizer" << std::endl;
+        visualizer_.reset();
+      }
+    } else {
+      visualizer_ = viz::createVisualizer(false);  // NullVisualizer
+    }
+
     std::cout << "[AlgorithmManager] Initialized successfully" << std::endl;
     std::cout << "  Primary planner: " << config_.primary_planner << std::endl;
     std::cout << "  Fallback planner: " << config_.fallback_planner << std::endl;
     std::cout << "  Max computation time: " << config_.max_computation_time_ms << " ms" << std::endl;
+    std::cout << "  Visualization: " << (config_.enable_visualization ? "ENABLED" : "DISABLED") << std::endl;
+
+    if (visualizer_) {
+      system_info_cache_.general.clear();
+      system_info_cache_.perception_plugins.clear();
+      system_info_cache_.planner_plugins.clear();
+
+      system_info_cache_.general["Config File"] = active_config_file_.empty()
+        ? "config/default.json"
+        : active_config_file_;
+      system_info_cache_.general["Visualizer"] = "ImGui (SDL2/OpenGL2)";
+      system_info_cache_.general["Primary Planner"] = planner_plugin_manager_
+        ? planner_plugin_manager_->getPrimaryPlannerName()
+        : config_.primary_planner;
+      system_info_cache_.general["Fallback Planner"] = planner_plugin_manager_
+        ? planner_plugin_manager_->getFallbackPlannerName()
+        : config_.fallback_planner;
+      system_info_cache_.general["Fallback Enabled"] = planner_plugin_manager_ && planner_plugin_manager_->isFallbackEnabled()
+        ? "Yes"
+        : (config_.enable_planner_fallback ? "Yes" : "No");
+      {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(1) << config_.max_computation_time_ms;
+        system_info_cache_.general["Max Computation Time"] = oss.str() + " ms";
+      }
+      system_info_cache_.general["Visualization"] = config_.enable_visualization ? "Enabled" : "Disabled";
+      if (!connection_label_.empty()) {
+        system_info_cache_.general["Connection Target"] = connection_label_;
+      }
+
+      if (perception_plugin_manager_) {
+        const auto& plugin_configs = perception_plugin_manager_->getPluginConfigs();
+        for (const auto& plugin_config : plugin_configs) {
+          std::ostringstream oss;
+          oss << plugin_config.name
+              << " (priority=" << plugin_config.priority << ")";
+          oss << (plugin_config.enabled ? " [ENABLED]" : " [DISABLED]");
+          if (!plugin_config.params.is_null() && !plugin_config.params.empty()) {
+            oss << " params=" << plugin_config.params.dump();
+          }
+          system_info_cache_.perception_plugins.push_back(oss.str());
+        }
+      }
+
+      if (planner_plugin_manager_) {
+        system_info_cache_.planner_plugins.push_back(
+          "Primary: " + planner_plugin_manager_->getPrimaryPlannerName());
+        if (planner_plugin_manager_->isFallbackEnabled() &&
+            !planner_plugin_manager_->getFallbackPlannerName().empty()) {
+          system_info_cache_.planner_plugins.push_back(
+            "Fallback: " + planner_plugin_manager_->getFallbackPlannerName());
+        }
+      } else {
+        system_info_cache_.planner_plugins.push_back("Primary: " + config_.primary_planner);
+        if (config_.enable_planner_fallback) {
+          system_info_cache_.planner_plugins.push_back("Fallback: " + config_.fallback_planner);
+        }
+      }
+
+      visualizer_->setSystemInfo(system_info_cache_);
+
+      viz::IVisualizer::ConnectionStatus connection_status;
+      connection_status.connected = bridge_ && bridge_->is_connected();
+      connection_status.label = connection_label_;
+      connection_status.message = connection_status.connected ? "Connected" : "Bridge not connected";
+      visualizer_->updateConnectionStatus(connection_status);
+    }
 
     return true;
   } catch (const std::exception& e) {
@@ -43,6 +127,26 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
                               proto::EgoCmd& ego_cmd) {
   stats_.total_processed++;
 
+  // 🎨 开始新的可视化帧
+  if (visualizer_) {
+    visualizer_->beginFrame();
+
+    viz::IVisualizer::ConnectionStatus connection_status;
+    connection_status.connected = bridge_ && bridge_->is_connected();
+    connection_status.label = connection_label_;
+    connection_status.message = connection_status.connected
+      ? "Processing world_tick"
+      : "Bridge disconnected";
+    visualizer_->updateConnectionStatus(connection_status);
+    visualizer_->showDebugInfo("Status", connection_status.connected ? "Processing" : "No bridge connection");
+    visualizer_->showDebugInfo("Tick ID", std::to_string(world_tick.tick_id()));
+    {
+      std::ostringstream stamp_stream;
+      stamp_stream << std::fixed << std::setprecision(3) << world_tick.stamp();
+      visualizer_->showDebugInfo("Stamp", stamp_stream.str());
+    }
+  }
+
   auto total_start = std::chrono::steady_clock::now();
 
   // Step 1: 前置处理（生成标准化的 PerceptionInput）
@@ -55,6 +159,14 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
   auto preprocessing_end = std::chrono::steady_clock::now();
   double preprocessing_time = std::chrono::duration<double, std::milli>(
       preprocessing_end - preprocessing_start).count();
+
+  // 🎨 可视化感知输入数据
+  if (visualizer_) {
+    visualizer_->drawEgo(perception_input.ego);
+    visualizer_->drawGoal(perception_input.task.goal_pose);
+    visualizer_->drawBEVObstacles(perception_input.bev_obstacles);
+    visualizer_->drawDynamicObstacles(perception_input.dynamic_obstacles);
+  }
 
   // Step 2: 感知插件处理
   auto perception_start = std::chrono::steady_clock::now();
@@ -71,12 +183,30 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
   double perception_time = std::chrono::duration<double, std::milli>(
       perception_end - perception_start).count();
 
+  if (visualizer_) {
+    visualizer_->updatePlanningContext(context);
+  }
+
   if (!perception_success) {
     stats_.perception_failures++;
     if (config_.verbose_logging) {
       std::cerr << "[AlgorithmManager] Perception plugin processing failed" << std::endl;
     }
+    // 🎨 结束帧（即使失败也要渲染）
+    if (visualizer_) {
+      plugin::PlanningResult failure_result;
+      failure_result.success = false;
+      failure_result.failure_reason = "Perception Failed";
+      visualizer_->updatePlanningResult(failure_result);
+      visualizer_->showDebugInfo("Status", "Perception Failed");
+      visualizer_->endFrame();
+    }
     return false;
+  }
+
+  // 🎨 可视化感知处理结果（如栅格地图）
+  if (visualizer_ && context.occupancy_grid) {
+    visualizer_->drawOccupancyGrid(*context.occupancy_grid);
   }
 
   // Step 3: 规划器插件处理
@@ -97,7 +227,22 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
     if (config_.verbose_logging) {
       std::cerr << "[AlgorithmManager] Planning failed" << std::endl;
     }
+    if (planning_result.failure_reason.empty()) {
+      planning_result.failure_reason = "Planner returned false";
+    }
+    // 🎨 结束帧（即使失败也要渲染）
+    if (visualizer_) {
+      visualizer_->updatePlanningResult(planning_result);
+      visualizer_->showDebugInfo("Status", "Planning Failed");
+      visualizer_->endFrame();
+    }
     return false;
+  }
+
+  // 🎨 可视化规划结果
+  if (visualizer_) {
+    visualizer_->updatePlanningResult(planning_result);
+    visualizer_->drawTrajectory(planning_result.trajectory, planning_result.planner_name);
   }
 
   // Step 4: 转换为 proto 格式
@@ -124,6 +269,32 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
 
   updateStatistics(total_time, perception_time, planning_time, true);
 
+  // 🎨 显示性能调试信息
+  if (visualizer_) {
+    viz::IVisualizer::ConnectionStatus connection_status;
+    connection_status.connected = bridge_ && bridge_->is_connected();
+    connection_status.label = connection_label_;
+    connection_status.message = connection_status.connected ? "Last tick processed" : "Bridge disconnected";
+    visualizer_->updateConnectionStatus(connection_status);
+
+    auto format_ms = [](double value) {
+      std::ostringstream oss;
+      oss << std::fixed << std::setprecision(2) << value;
+      return oss.str();
+    };
+
+    visualizer_->showDebugInfo("Status", "Success");
+    visualizer_->showDebugInfo("Total Time", format_ms(total_time) + " ms");
+    visualizer_->showDebugInfo("Preprocessing", format_ms(preprocessing_time) + " ms");
+    visualizer_->showDebugInfo("Perception", format_ms(perception_time) + " ms");
+    visualizer_->showDebugInfo("Planning", format_ms(planning_time) + " ms");
+  }
+
+  // 🎨 结束帧并渲染
+  if (visualizer_) {
+    visualizer_->endFrame();
+  }
+
   if (config_.verbose_logging) {
     std::cout << "[AlgorithmManager] Processing successful (plugin system):" << std::endl;
     std::cout << "  Total time: " << total_time << " ms" << std::endl;
@@ -144,8 +315,41 @@ void AlgorithmManager::updateConfig(const Config& config) {
   initialize();
 }
 
-void AlgorithmManager::setBridge(Bridge* bridge) {
+void AlgorithmManager::setBridge(Bridge* bridge, const std::string& connection_label) {
   bridge_ = bridge;
+  connection_label_ = connection_label;
+
+  if (!connection_label_.empty()) {
+    system_info_cache_.general["Connection Target"] = connection_label_;
+    if (visualizer_) {
+      visualizer_->setSystemInfo(system_info_cache_);
+    }
+  }
+
+  if (visualizer_) {
+    viz::IVisualizer::ConnectionStatus status;
+    status.connected = bridge_ && bridge_->is_connected();
+    status.label = connection_label_;
+    status.message = status.connected ? "Connected" : "Waiting for connection";
+    visualizer_->updateConnectionStatus(status);
+  }
+}
+
+void AlgorithmManager::renderIdleFrame() {
+  if (!visualizer_) {
+    return;
+  }
+
+  visualizer_->beginFrame();
+
+  viz::IVisualizer::ConnectionStatus status;
+  status.connected = bridge_ && bridge_->is_connected();
+  status.label = connection_label_;
+  status.message = status.connected ? "Waiting for world_tick..." : "Waiting for connection";
+  visualizer_->updateConnectionStatus(status);
+  visualizer_->showDebugInfo("Status", status.connected ? "Waiting for world_tick..." : "Bridge disconnected");
+
+  visualizer_->endFrame();
 }
 
 void AlgorithmManager::updateStatistics(double total_time, double perception_time,
@@ -177,6 +381,7 @@ void AlgorithmManager::setupPluginSystem() {
 
   // 从配置文件加载插件
   std::string config_file = config_.config_file.empty() ? "config/default.json" : config_.config_file;
+  active_config_file_ = config_file;
   int loaded_count = plugin_loader.loadPluginsFromConfig(config_file);
   std::cout << "[AlgorithmManager] Dynamically loaded " << loaded_count << " plugins" << std::endl;
 
@@ -241,7 +446,7 @@ void AlgorithmManager::setupPluginSystem() {
   planner_plugin_manager_->loadPlanners(
       config_.primary_planner,   // 主规划器（从配置读取）
       config_.fallback_planner,  // 降级规划器（从配置读取）
-      true,                      // 启用降级
+      config_.enable_planner_fallback,  // 启用降级
       planner_configs);
   planner_plugin_manager_->initialize();
 

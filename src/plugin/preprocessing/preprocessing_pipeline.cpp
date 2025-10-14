@@ -24,9 +24,16 @@ plugin::PerceptionInput PreprocessingPipeline::process(
   input.task = BasicDataConverter::convertTask(world_tick);
 
   // 3. 提取 BEV 障碍物
+  std::cout << "[PreprocessingPipeline] Extracting BEV obstacles..." << std::endl;
   auto bev_obstacles = bev_extractor_.extract(world_tick);
   if (bev_obstacles) {
     input.bev_obstacles = *bev_obstacles;
+    std::cout << "[PreprocessingPipeline] BEV obstacles extracted successfully:" << std::endl;
+    std::cout << "[PreprocessingPipeline]   Circles: " << input.bev_obstacles.circles.size() << std::endl;
+    std::cout << "[PreprocessingPipeline]   Rectangles: " << input.bev_obstacles.rectangles.size() << std::endl;
+    std::cout << "[PreprocessingPipeline]   Polygons: " << input.bev_obstacles.polygons.size() << std::endl;
+  } else {
+    std::cout << "[PreprocessingPipeline] WARNING: BEV extractor returned nullptr!" << std::endl;
   }
 
   // 4. 预测动态障碍物

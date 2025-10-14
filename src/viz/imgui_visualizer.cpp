@@ -240,8 +240,20 @@ void ImGuiVisualizer::drawGoal(const planning::Pose2d& goal) {
 }
 
 void ImGuiVisualizer::drawBEVObstacles(const planning::BEVObstacles& obstacles) {
+  // 🔍 调试日志：检查传入的障碍物数据
+  std::cout << "[ImGuiVisualizer] drawBEVObstacles called:" << std::endl;
+  std::cout << "[ImGuiVisualizer]   Input circles: " << obstacles.circles.size() << std::endl;
+  std::cout << "[ImGuiVisualizer]   Input rectangles: " << obstacles.rectangles.size() << std::endl;
+  std::cout << "[ImGuiVisualizer]   Input polygons: " << obstacles.polygons.size() << std::endl;
+
   // 缓存障碍物数据，在 renderScene() 中绘制
   bev_obstacles_ = obstacles;
+
+  // 🔍 调试日志：检查缓存后的数据
+  std::cout << "[ImGuiVisualizer]   Cached circles: " << bev_obstacles_.circles.size() << std::endl;
+  std::cout << "[ImGuiVisualizer]   Cached rectangles: " << bev_obstacles_.rectangles.size() << std::endl;
+  std::cout << "[ImGuiVisualizer]   Cached polygons: " << bev_obstacles_.polygons.size() << std::endl;
+
   debug_info_["BEV Circles"] = std::to_string(obstacles.circles.size());
   debug_info_["BEV Rectangles"] = std::to_string(obstacles.rectangles.size());
   debug_info_["BEV Polygons"] = std::to_string(obstacles.polygons.size());
@@ -494,6 +506,14 @@ void ImGuiVisualizer::renderScene() {
   }
 
   // 2. 绘制 BEV 障碍物 - 矩形
+  if (obstacle_log_count % 60 == 0 && !bev_obstacles_.rectangles.empty()) {
+    std::cout << "[Viz]   Drawing " << bev_obstacles_.rectangles.size() << " BEV rectangles" << std::endl;
+    std::cout << "[Viz]     First rect: world=(" << bev_obstacles_.rectangles[0].pose.x
+              << ", " << bev_obstacles_.rectangles[0].pose.y
+              << "), size=(" << bev_obstacles_.rectangles[0].width
+              << " x " << bev_obstacles_.rectangles[0].height << ")" << std::endl;
+  }
+
   for (const auto& rect : bev_obstacles_.rectangles) {
     auto center = worldToScreen(rect.pose.x, rect.pose.y);
     float w = rect.width * config_.pixels_per_meter * view_state_.zoom;
@@ -501,14 +521,63 @@ void ImGuiVisualizer::renderScene() {
 
     // 简化：绘制为圆形（完整的旋转矩形需要更复杂的计算）
     float radius = std::sqrt(w * w + h * h) / 2.0f;
+
+    if (obstacle_log_count % 60 == 0) {
+      auto screen_pos = worldToScreen(rect.pose.x, rect.pose.y);
+      std::cout << "[Viz]       Rect screen pos=(" << screen_pos.x << ", " << screen_pos.y
+                << "), radius=" << radius << std::endl;
+    }
+
     draw_list->AddCircleFilled(
       ImVec2(center.x, center.y),
       radius,
-      IM_COL32(255, 150, 100, 200)
+      IM_COL32(100, 255, 100, 200)  // 🔧 改为绿色，更容易区分
+    );
+    draw_list->AddCircle(
+      ImVec2(center.x, center.y),
+      radius,
+      IM_COL32(0, 255, 0, 255),  // 绿色边框
+      0, 2.0f
     );
   }
 
-  // 3. 绘制动态障碍物
+  // 3. 绘制 BEV 障碍物 - 多边形
+  if (obstacle_log_count % 60 == 0 && !bev_obstacles_.polygons.empty()) {
+    std::cout << "[Viz]   Drawing " << bev_obstacles_.polygons.size() << " BEV polygons" << std::endl;
+    std::cout << "[Viz]     First polygon: " << bev_obstacles_.polygons[0].vertices.size() << " vertices" << std::endl;
+  }
+
+  for (const auto& poly : bev_obstacles_.polygons) {
+    if (poly.vertices.empty()) continue;
+
+    // 绘制多边形填充
+    std::vector<ImVec2> screen_points;
+    for (const auto& vertex : poly.vertices) {
+      auto screen_pos = worldToScreen(vertex.x, vertex.y);
+      screen_points.push_back(ImVec2(screen_pos.x, screen_pos.y));
+    }
+
+    if (screen_points.size() >= 3) {
+      draw_list->AddConvexPolyFilled(
+        screen_points.data(),
+        screen_points.size(),
+        IM_COL32(255, 200, 0, 150)  // 黄色半透明填充
+      );
+
+      // 绘制多边形边框
+      for (size_t i = 0; i < screen_points.size(); ++i) {
+        size_t next = (i + 1) % screen_points.size();
+        draw_list->AddLine(
+          screen_points[i],
+          screen_points[next],
+          IM_COL32(255, 200, 0, 255),  // 黄色边框
+          2.0f
+        );
+      }
+    }
+  }
+
+  // 4. 绘制动态障碍物
   for (const auto& dyn_obs : dynamic_obstacles_) {
     auto center = worldToScreen(dyn_obs.current_pose.x, dyn_obs.current_pose.y);
     float radius = std::max(dyn_obs.length, dyn_obs.width) / 2.0f * config_.pixels_per_meter * view_state_.zoom;
@@ -533,7 +602,7 @@ void ImGuiVisualizer::renderScene() {
     }
   }
 
-  // 4. 绘制规划轨迹
+  // 5. 绘制规划轨迹
   static int traj_log_count = 0;
   if (traj_log_count++ % 60 == 0 && trajectory_.size() > 1) {
     std::cout << "[Viz]   Drawing trajectory with " << trajectory_.size() << " points" << std::endl;

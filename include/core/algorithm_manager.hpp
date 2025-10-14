@@ -105,6 +105,20 @@ public:
   void setBridge(Bridge* bridge, const std::string& connection_label = "");
 
   /**
+   * @brief 设置仿真状态（由 Bridge 的仿真状态回调调用）
+   */
+  void setSimulationStarted(bool started) {
+    simulation_started_.store(started);
+  }
+
+  /**
+   * @brief 获取仿真状态
+   */
+  bool isSimulationStarted() const {
+    return simulation_started_.load();
+  }
+
+  /**
    * @brief 在等待数据时渲染空闲帧，确保窗口保持响应
    */
   void renderIdleFrame();
@@ -125,6 +139,9 @@ private:
   viz::IVisualizer::SystemInfo system_info_cache_;
   std::string connection_label_;
   std::string active_config_file_;
+
+  // 仿真状态
+  std::atomic<bool> simulation_started_{false};
 
   // 内部函数
   void setupPluginSystem();

@@ -9,6 +9,18 @@ std::unique_ptr<planning::BEVObstacles> BEVExtractor::extract(
     const proto::WorldTick& world_tick) {
   auto obstacles = std::make_unique<planning::BEVObstacles>();
 
+  // 🔍 调试日志：输入数据检查
+  std::cout << "[BEVExtractor] ========== Extract called ==========" << std::endl;
+  std::cout << "[BEVExtractor] WorldTick tick_id: " << world_tick.tick_id() << std::endl;
+  std::cout << "[BEVExtractor] Has static_map: " << world_tick.has_static_map() << std::endl;
+  std::cout << "[BEVExtractor] Dynamic obstacles count: " << world_tick.dynamic_obstacles_size() << std::endl;
+
+  if (world_tick.has_static_map()) {
+    const auto& static_map = world_tick.static_map();
+    std::cout << "[BEVExtractor] StaticMap circles: " << static_map.circles_size() << std::endl;
+    std::cout << "[BEVExtractor] StaticMap polygons: " << static_map.polygons_size() << std::endl;
+  }
+
   // 提取静态障碍物
   extractStaticObstacles(world_tick, *obstacles);
 
@@ -16,6 +28,13 @@ std::unique_ptr<planning::BEVObstacles> BEVExtractor::extract(
   extractDynamicObstacles(world_tick, *obstacles);
 
   total_extractions_++;
+
+  // 🔍 调试日志：输出结果
+  std::cout << "[BEVExtractor] ========== Extract result ==========" << std::endl;
+  std::cout << "[BEVExtractor] Extracted circles: " << obstacles->circles.size() << std::endl;
+  std::cout << "[BEVExtractor] Extracted rectangles: " << obstacles->rectangles.size() << std::endl;
+  std::cout << "[BEVExtractor] Extracted polygons: " << obstacles->polygons.size() << std::endl;
+  std::cout << "[BEVExtractor] ======================================" << std::endl;
 
   return obstacles;
 }
@@ -26,17 +45,26 @@ void BEVExtractor::extractStaticObstacles(const proto::WorldTick& world_tick,
   if (world_tick.has_static_map()) {
     cached_static_map_ = world_tick.static_map();
     has_cached_static_map_ = true;
+    std::cout << "[BEVExtractor] Updated static map cache" << std::endl;
   }
 
   // 如果没有缓存的静态地图，则跳过
   if (!has_cached_static_map_) {
+    std::cout << "[BEVExtractor] No cached static map, skipping static obstacles" << std::endl;
     return;
   }
 
   const auto& static_map = cached_static_map_;
   const auto& ego_pose = world_tick.ego().pose();
 
+  std::cout << "[BEVExtractor] Processing static obstacles..." << std::endl;
+  std::cout << "[BEVExtractor]   Ego position: (" << ego_pose.x() << ", " << ego_pose.y() << ")" << std::endl;
+  std::cout << "[BEVExtractor]   Detection range: " << config_.detection_range << " m" << std::endl;
+  std::cout << "[BEVExtractor]   Cached circles: " << static_map.circles_size() << std::endl;
+  std::cout << "[BEVExtractor]   Cached polygons: " << static_map.polygons_size() << std::endl;
+
   // 处理静态圆形障碍物
+  int circles_in_range = 0;
   for (const auto& circle : static_map.circles()) {
     // 检查距离是否在检测范围内
     double dx = circle.x() - ego_pose.x();
@@ -51,10 +79,13 @@ void BEVExtractor::extractStaticObstacles(const proto::WorldTick& world_tick,
       circle_obs.confidence = 1.0;  // 静态障碍物置信度为1.0
 
       obstacles.circles.push_back(circle_obs);
+      circles_in_range++;
     }
   }
+  std::cout << "[BEVExtractor]   Static circles in range: " << circles_in_range << std::endl;
 
   // 处理静态多边形障碍物
+  int polygons_in_range = 0;
   for (const auto& polygon : static_map.polygons()) {
     if (polygon.points().empty()) continue;
 
@@ -83,8 +114,10 @@ void BEVExtractor::extractStaticObstacles(const proto::WorldTick& world_tick,
       }
 
       obstacles.polygons.push_back(poly_obs);
+      polygons_in_range++;
     }
   }
+  std::cout << "[BEVExtractor]   Static polygons in range: " << polygons_in_range << std::endl;
 }
 
 void BEVExtractor::extractDynamicObstacles(const proto::WorldTick& world_tick,

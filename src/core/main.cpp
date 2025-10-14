@@ -191,6 +191,13 @@ int main(int argc, char* argv[]) {
       const auto duration = std::chrono::steady_clock::now() - start;
       const auto ms = std::chrono::duration<double, std::milli>(duration).count();
 
+      // 🔧 如果仿真未开始，process() 会返回 false 并渲染空闲帧
+      // 此时不发送 plan，直接跳过
+      if (!algorithm_manager.isSimulationStarted()) {
+        // 仿真未开始，不发送 plan
+        continue;
+      }
+
       if (!ok) {
         std::cerr << "[AlgorithmManager] WARN: Failed to process, sending fallback" << std::endl;
         // 发送静止计划（兜底策略）
@@ -235,6 +242,17 @@ int main(int argc, char* argv[]) {
     }
   });
 
+  // 🔧 设置仿真状态回调（监听开始/暂停事件）
+  bridge.set_simulation_state_callback([&algorithm_manager](bool running) {
+    // 更新 AlgorithmManager 的仿真状态
+    algorithm_manager.setSimulationStarted(running);
+    if (running) {
+      std::cout << "[Main] ✅ Simulation STARTED - algorithm will now process ticks" << std::endl;
+    } else {
+      std::cout << "[Main] ⏸️  Simulation PAUSED/RESET - algorithm will skip processing" << std::endl;
+    }
+  });
+
   // 启动 Bridge（设置回调）
   bridge.start([&](const navsim::proto::WorldTick& world) {
     std::lock_guard<std::mutex> lock(shared.mutex);
@@ -245,7 +263,8 @@ int main(int argc, char* argv[]) {
   });
 
   // 主线程等待中断信号或可视化窗口关闭
-  std::cout << "[Main] Waiting for world_tick messages... (Press Ctrl+C to exit)" << std::endl;
+  std::cout << "[Main] ⏸️  Waiting for simulation to start..." << std::endl;
+  std::cout << "[Main] Please click the 'Start' button in the Web interface" << std::endl;
   while (!navsim::g_interrupt.load()) {
     std::this_thread::sleep_for(100ms);
 

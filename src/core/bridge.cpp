@@ -23,6 +23,7 @@ class Bridge::Impl {
   ix::WebSocket ws_;
   std::string room_id_;
   WorldTickCallback callback_;
+  SimulationStateCallback sim_state_callback_;
   std::atomic<bool> connected_{false};
   std::mutex mutex_;
 
@@ -33,6 +34,9 @@ class Bridge::Impl {
 
   // 感知调试状态
   std::atomic<bool> perception_debug_enabled_{false};
+
+  // 仿真状态
+  std::atomic<bool> simulation_running_{false};
 
   // 滑动窗口统计（最近 100 帧）
   std::deque<double> compute_ms_window_;
@@ -118,6 +122,14 @@ void Bridge::connect(const std::string& url, const std::string& room_id) {
 void Bridge::start(const WorldTickCallback& on_world_tick) {
   impl_->callback_ = on_world_tick;
   std::cout << "[Bridge] Started, waiting for world_tick messages..." << std::endl;
+}
+
+void Bridge::set_simulation_state_callback(const SimulationStateCallback& callback) {
+  impl_->sim_state_callback_ = callback;
+}
+
+bool Bridge::is_simulation_running() const {
+  return impl_->simulation_running_.load();
 }
 
 void Bridge::publish(const proto::PlanUpdate& plan, double compute_ms) {
@@ -315,6 +327,41 @@ void Bridge::Impl::on_message(const ix::WebSocketMessagePtr& msg) {
           std::cout << "[Bridge] Perception debug " << (enable ? "enabled" : "disabled") << std::endl;
         } catch (const std::exception& e) {
           std::cerr << "[Bridge] Error processing perception debug control: " << e.what() << std::endl;
+        }
+      }
+      // 🔧 新增：处理仿真控制消息
+      else if (topic.find("/sim_ctrl") != std::string::npos) {
+        try {
+          if (j.contains("data") && j["data"].is_object()) {
+            std::string command = j["data"].value("command", "");
+            if (command == "start" || command == "resume") {
+              simulation_running_ = true;
+              std::cout << "[Bridge] ✅ Simulation STARTED - algorithm will now process ticks" << std::endl;
+
+              // 调用仿真状态回调
+              if (sim_state_callback_) {
+                sim_state_callback_(true);
+              }
+            } else if (command == "pause") {
+              simulation_running_ = false;
+              std::cout << "[Bridge] ⏸️  Simulation PAUSED - algorithm will skip processing" << std::endl;
+
+              // 调用仿真状态回调
+              if (sim_state_callback_) {
+                sim_state_callback_(false);
+              }
+            } else if (command == "reset") {
+              simulation_running_ = false;
+              std::cout << "[Bridge] 🔄 Simulation RESET - algorithm will skip processing" << std::endl;
+
+              // 调用仿真状态回调
+              if (sim_state_callback_) {
+                sim_state_callback_(false);
+              }
+            }
+          }
+        } catch (const std::exception& e) {
+          std::cerr << "[Bridge] Error processing sim_ctrl: " << e.what() << std::endl;
         }
       }
       // 忽略其他消息（heartbeat, error 等）

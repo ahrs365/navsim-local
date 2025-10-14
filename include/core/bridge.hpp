@@ -17,6 +17,7 @@ namespace navsim {
 class Bridge {
  public:
   using WorldTickCallback = std::function<void(const proto::WorldTick&)>;
+  using SimulationStateCallback = std::function<void(bool)>;  // 仿真状态回调：true=运行，false=暂停
 
   Bridge();
   ~Bridge();
@@ -29,6 +30,12 @@ class Bridge {
 
   // 启动接收循环（设置回调）
   void start(const WorldTickCallback& on_world_tick);
+
+  // 设置仿真状态回调（监听开始/暂停事件）
+  void set_simulation_state_callback(const SimulationStateCallback& callback);
+
+  // 获取当前仿真状态
+  bool is_simulation_running() const;
 
   // 发送 plan 消息（不发送 ego_cmd）
   void publish(const proto::PlanUpdate& plan, double compute_ms);

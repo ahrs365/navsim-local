@@ -127,6 +127,35 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
                               proto::EgoCmd& ego_cmd) {
   stats_.total_processed++;
 
+  // 🔧 检查仿真是否已开始
+  if (!simulation_started_.load()) {
+    // 仿真未开始，只更新可视化，不执行算法
+    if (visualizer_) {
+      visualizer_->beginFrame();
+
+      viz::IVisualizer::ConnectionStatus connection_status;
+      connection_status.connected = bridge_ && bridge_->is_connected();
+      connection_status.label = connection_label_;
+      connection_status.message = "⏸️ Waiting for simulation to start...";
+      visualizer_->updateConnectionStatus(connection_status);
+      visualizer_->showDebugInfo("Status", "⏸️ Waiting for START button");
+      visualizer_->showDebugInfo("Tick ID", std::to_string(world_tick.tick_id()));
+      {
+        std::ostringstream stamp_stream;
+        stamp_stream << std::fixed << std::setprecision(3) << world_tick.stamp();
+        visualizer_->showDebugInfo("Stamp", stamp_stream.str());
+      }
+
+      // 结束可视化帧
+      visualizer_->endFrame();
+    }
+
+    // 返回空的 PlanUpdate（不执行算法）
+    plan_update.set_tick_id(world_tick.tick_id());
+    plan_update.set_stamp(world_tick.stamp());
+    return false;  // 返回 false 表示未处理
+  }
+
   // 🎨 开始新的可视化帧
   if (visualizer_) {
     visualizer_->beginFrame();
@@ -135,10 +164,10 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
     connection_status.connected = bridge_ && bridge_->is_connected();
     connection_status.label = connection_label_;
     connection_status.message = connection_status.connected
-      ? "Processing world_tick"
+      ? "✅ Processing world_tick"
       : "Bridge disconnected";
     visualizer_->updateConnectionStatus(connection_status);
-    visualizer_->showDebugInfo("Status", connection_status.connected ? "Processing" : "No bridge connection");
+    visualizer_->showDebugInfo("Status", connection_status.connected ? "✅ Processing" : "No bridge connection");
     visualizer_->showDebugInfo("Tick ID", std::to_string(world_tick.tick_id()));
     {
       std::ostringstream stamp_stream;
@@ -160,12 +189,21 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
   double preprocessing_time = std::chrono::duration<double, std::milli>(
       preprocessing_end - preprocessing_start).count();
 
+  // 🔍 调试日志：检查 perception_input 中的障碍物数据
+  std::cout << "[AlgorithmManager] ========== Perception Input Check ==========" << std::endl;
+  std::cout << "[AlgorithmManager] BEV obstacles in perception_input:" << std::endl;
+  std::cout << "[AlgorithmManager]   Circles: " << perception_input.bev_obstacles.circles.size() << std::endl;
+  std::cout << "[AlgorithmManager]   Rectangles: " << perception_input.bev_obstacles.rectangles.size() << std::endl;
+  std::cout << "[AlgorithmManager]   Polygons: " << perception_input.bev_obstacles.polygons.size() << std::endl;
+
   // 🎨 可视化感知输入数据
   if (visualizer_) {
+    std::cout << "[AlgorithmManager] Calling visualizer->drawBEVObstacles()..." << std::endl;
     visualizer_->drawEgo(perception_input.ego);
     visualizer_->drawGoal(perception_input.task.goal_pose);
     visualizer_->drawBEVObstacles(perception_input.bev_obstacles);
     visualizer_->drawDynamicObstacles(perception_input.dynamic_obstacles);
+    std::cout << "[AlgorithmManager] Visualizer calls completed" << std::endl;
   }
 
   // Step 2: 感知插件处理

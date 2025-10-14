@@ -202,6 +202,16 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
     visualizer_->drawEgo(perception_input.ego);
     visualizer_->drawGoal(perception_input.task.goal_pose);
     visualizer_->drawBEVObstacles(perception_input.bev_obstacles);
+
+    std::cout << "[AlgorithmManager] Calling visualizer->drawDynamicObstacles() with "
+              << perception_input.dynamic_obstacles.size() << " obstacles..." << std::endl;
+    // 🔧 修复问题1：打印所有障碍物的信息
+    for (size_t i = 0; i < perception_input.dynamic_obstacles.size(); ++i) {
+      const auto& obs = perception_input.dynamic_obstacles[i];
+      std::cout << "[AlgorithmManager]   Dyn obs #" << i << ": shape=" << obs.shape_type
+                << ", pos=(" << obs.current_pose.x << ", " << obs.current_pose.y
+                << "), length=" << obs.length << ", width=" << obs.width << std::endl;
+    }
     visualizer_->drawDynamicObstacles(perception_input.dynamic_obstacles);
     std::cout << "[AlgorithmManager] Visualizer calls completed" << std::endl;
   }

@@ -578,14 +578,98 @@ void ImGuiVisualizer::renderScene() {
   }
 
   // 4. 绘制动态障碍物
+  static int dyn_obs_log_count = 0;
+  if (dyn_obs_log_count++ % 60 == 0 && !dynamic_obstacles_.empty()) {
+    std::cout << "[Viz]   Drawing " << dynamic_obstacles_.size() << " dynamic obstacles" << std::endl;
+    // 🔧 修复问题1：打印所有障碍物的信息
+    for (size_t i = 0; i < dynamic_obstacles_.size(); ++i) {
+      const auto& obs = dynamic_obstacles_[i];
+      std::cout << "[Viz]     Dyn obs #" << i << ": shape=" << obs.shape_type
+                << ", pos=(" << obs.current_pose.x << ", " << obs.current_pose.y
+                << "), length=" << obs.length << ", width=" << obs.width << std::endl;
+    }
+  }
+
   for (const auto& dyn_obs : dynamic_obstacles_) {
     auto center = worldToScreen(dyn_obs.current_pose.x, dyn_obs.current_pose.y);
-    float radius = std::max(dyn_obs.length, dyn_obs.width) / 2.0f * config_.pixels_per_meter * view_state_.zoom;
-    draw_list->AddCircleFilled(
-      ImVec2(center.x, center.y),
-      radius,
-      IM_COL32(255, 0, 255, 200)  // 紫色
-    );
+
+    // 🔧 修复问题4：使用 shape_type 判断，而不是长宽相等
+    bool is_circle = (dyn_obs.shape_type == "circle");
+
+    if (is_circle) {
+      // 绘制圆形动态障碍物
+      float radius = dyn_obs.length / 2.0f * config_.pixels_per_meter * view_state_.zoom;
+
+      if (dyn_obs_log_count % 60 == 0) {
+        std::cout << "[Viz]       Dyn obs (circle) radius=" << radius << " pixels (diameter=" << dyn_obs.length << ")" << std::endl;
+      }
+
+      draw_list->AddCircleFilled(
+        ImVec2(center.x, center.y),
+        radius,
+        IM_COL32(255, 0, 255, 200)  // 紫色
+      );
+      draw_list->AddCircle(
+        ImVec2(center.x, center.y),
+        radius,
+        IM_COL32(255, 0, 255, 255),  // 紫色边框
+        0, 2.0f
+      );
+    } else {
+      // 绘制矩形动态障碍物（带旋转）
+      float w = dyn_obs.width * config_.pixels_per_meter * view_state_.zoom;
+      float h = dyn_obs.length * config_.pixels_per_meter * view_state_.zoom;
+      float yaw = dyn_obs.current_pose.yaw;
+
+      if (dyn_obs_log_count % 60 == 0) {
+        std::cout << "[Viz]       Dyn obs (rect) visualization:" << std::endl;
+        std::cout << "[Viz]         dyn_obs.width = " << dyn_obs.width << " m" << std::endl;
+        std::cout << "[Viz]         dyn_obs.length = " << dyn_obs.length << " m" << std::endl;
+        std::cout << "[Viz]         dyn_obs.current_pose.yaw = " << yaw << " rad" << std::endl;
+        std::cout << "[Viz]         Screen size: w=" << w << " px, h=" << h << " px" << std::endl;
+        std::cout << "[Viz]         Velocity: vx=" << dyn_obs.current_twist.vx
+                  << ", vy=" << dyn_obs.current_twist.vy << std::endl;
+      }
+
+      // 计算矩形的四个顶点（相对于中心）
+      float half_w = w / 2.0f;
+      float half_h = h / 2.0f;
+      float cos_yaw = std::cos(yaw);
+      float sin_yaw = std::sin(yaw);
+
+      ImVec2 corners[4];
+      float local_corners[4][2] = {
+        {-half_w, -half_h},  // 左下
+        { half_w, -half_h},  // 右下
+        { half_w,  half_h},  // 右上
+        {-half_w,  half_h}   // 左上
+      };
+
+      for (int i = 0; i < 4; ++i) {
+        float lx = local_corners[i][0];
+        float ly = local_corners[i][1];
+        float rx = lx * cos_yaw - ly * sin_yaw;
+        float ry = lx * sin_yaw + ly * cos_yaw;
+        corners[i] = ImVec2(center.x + rx, center.y - ry);  // 注意 Y 轴翻转
+      }
+
+      // 绘制填充矩形
+      draw_list->AddConvexPolyFilled(corners, 4, IM_COL32(255, 0, 255, 200));  // 紫色填充
+
+      // 绘制矩形边框
+      for (int i = 0; i < 4; ++i) {
+        draw_list->AddLine(corners[i], corners[(i + 1) % 4], IM_COL32(255, 0, 255, 255), 2.0f);
+      }
+
+      // 绘制朝向指示（前方中心点）
+      float front_x = half_h * cos_yaw;
+      float front_y = half_h * sin_yaw;
+      draw_list->AddCircleFilled(
+        ImVec2(center.x + front_x, center.y - front_y),
+        3.0f,
+        IM_COL32(255, 255, 0, 255)  // 黄色点表示前方
+      );
+    }
 
     // 绘制速度箭头
     if (std::abs(dyn_obs.current_twist.vx) > 0.01 || std::abs(dyn_obs.current_twist.vy) > 0.01) {

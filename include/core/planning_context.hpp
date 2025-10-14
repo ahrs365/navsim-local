@@ -135,6 +135,7 @@ struct LaneLines {
 struct DynamicObstacle {
   int id;
   std::string type;  // "vehicle", "pedestrian", "cyclist"
+  std::string shape_type;  // "circle" or "rectangle" - 🔧 新增：形状类型
 
   // 当前状态
   Pose2d current_pose;

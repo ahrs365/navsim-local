@@ -24,8 +24,9 @@ std::unique_ptr<planning::BEVObstacles> BEVExtractor::extract(
   // 提取静态障碍物
   extractStaticObstacles(world_tick, *obstacles);
 
-  // 提取动态障碍物
-  extractDynamicObstacles(world_tick, *obstacles);
+  // 🔧 修复问题2：不要在这里提取动态障碍物！
+  // 动态障碍物应该由 DynamicObstaclePredictor 处理
+  // extractDynamicObstacles(world_tick, *obstacles);  // ← 删除此调用
 
   total_extractions_++;
 

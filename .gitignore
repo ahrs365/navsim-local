@@ -39,6 +39,9 @@ dist/
 *~
 .DS_Store
 
+# ImGui
+imgui.ini
+
 # Logs
 *.log
 

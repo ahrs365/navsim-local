@@ -305,7 +305,22 @@ bool JPSPlannerPlugin::convertJPSOutputToResult(const JPS::JPSPlanner& jps_plann
     // Set pose
     traj_pt.pose.x = path[i].x();
     traj_pt.pose.y = path[i].y();
-    traj_pt.pose.yaw = 0.0;  // TODO: Calculate yaw from path direction
+
+    // ✅ Calculate yaw from path direction
+    if (i + 1 < path.size()) {
+      // Use direction to next point
+      double dx = path[i + 1].x() - path[i].x();
+      double dy = path[i + 1].y() - path[i].y();
+      traj_pt.pose.yaw = std::atan2(dy, dx);
+    } else if (i > 0) {
+      // Last point: use direction from previous point
+      double dx = path[i].x() - path[i - 1].x();
+      double dy = path[i].y() - path[i - 1].y();
+      traj_pt.pose.yaw = std::atan2(dy, dx);
+    } else {
+      // Single point: use goal yaw (fallback)
+      traj_pt.pose.yaw = 0.0;
+    }
 
     // Set velocity (constant velocity for now)
     traj_pt.twist.vx = jps_config_.max_vel;

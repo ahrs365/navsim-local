@@ -31,8 +31,8 @@
         "priority": 90,
         "params": {
           "resolution": 0.1,
-          "map_width": 50.0,
-          "map_height": 50.0,
+          "map_width": 19.0,
+          "map_height": 19.0,
           "max_distance": 5.0,
           "include_dynamic": true
         }

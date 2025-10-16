@@ -151,6 +151,7 @@ int main(int argc, char* argv[]) {
 
   // 从配置文件加载（如果提供）
   if (!config_file.empty()) {
+    algo_config.config_file = config_file;  // ✅ 设置配置文件路径
     navsim::load_config_from_file(config_file, algo_config);
   }
 
@@ -249,6 +250,12 @@ int main(int argc, char* argv[]) {
       bridge.publish(plan, ms);
       last_plan = plan;
       loop_count++;
+
+      // 🔧 发送感知调试数据（如果启用）
+      // 注意：我们需要从 algorithm_manager 获取 PlanningContext
+      // 但是 process() 方法没有返回 context，所以我们需要修改架构
+      // 暂时先注释掉，需要重构 AlgorithmManager 来暴露 context
+      // bridge.send_perception_debug(context);
 
       // 每 5 秒发送一次心跳
       auto now = std::chrono::steady_clock::now();

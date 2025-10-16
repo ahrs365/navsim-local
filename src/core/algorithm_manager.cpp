@@ -344,6 +344,16 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
     visualizer_->endFrame();
   }
 
+  // 🔧 发送感知调试数据到前端（如果 Bridge 已连接且启用）
+  // 为了避免数据量过大导致卡顿，降低发送频率（每 10 帧发送一次）
+  static int perception_debug_counter = 0;
+  if (bridge_ && bridge_->is_connected() && bridge_->is_perception_debug_enabled()) {
+    if (++perception_debug_counter >= 10) {
+      bridge_->send_perception_debug(context);
+      perception_debug_counter = 0;
+    }
+  }
+
   if (config_.verbose_logging) {
     std::cout << "[AlgorithmManager] Processing successful (plugin system):" << std::endl;
     std::cout << "  Total time: " << total_time << " ms" << std::endl;

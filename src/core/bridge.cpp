@@ -764,6 +764,77 @@ nlohmann::json Bridge::Impl::context_to_json(const planning::PlanningContext& co
     data["bev_obstacles"] = bev_data;
   }
 
+  // ESDF 距离场地图
+  if (context.esdf_map) {
+    const auto& esdf = *context.esdf_map;
+
+    // ✅ esdf.config.width 和 esdf.config.height 已经是格子数了！
+    int grid_width = esdf.config.width;
+    int grid_height = esdf.config.height;
+
+    // 计算地图尺寸（米）
+    double map_width_m = grid_width * esdf.config.resolution;
+    double map_height_m = grid_height * esdf.config.resolution;
+
+    std::cout << "[Bridge] ESDF map found: " << map_width_m << "m x " << map_height_m << "m"
+              << " @ " << esdf.config.resolution << "m/cell"
+              << ", grid size: " << grid_width << "x" << grid_height
+              << ", data size: " << esdf.data.size() << std::endl;
+
+    // 🔧 优化：采样 ESDF 数据以减少传输量
+    // 根据格子数自动调整采样步长
+    int sample_step = 1;  // 默认不采样
+    if (grid_width > 400 || grid_height > 400) {
+      sample_step = 5;  // 大地图（500x500）采样为 100x100
+      std::cout << "[Bridge] ⚠️  Large ESDF map detected, applying 5x downsampling for network optimization" << std::endl;
+    } else if (grid_width > 200 || grid_height > 200) {
+      sample_step = 2;  // 中等地图（300x300）采样为 150x150
+      std::cout << "[Bridge] ⚠️  Medium ESDF map detected, applying 2x downsampling for network optimization" << std::endl;
+    }
+    // 小地图（<200x200）不采样
+
+    int sampled_width = (grid_width + sample_step - 1) / sample_step;
+    int sampled_height = (grid_height + sample_step - 1) / sample_step;
+    double sampled_resolution = esdf.config.resolution * sample_step;
+
+    std::vector<std::vector<double>> esdf_data;
+    for (int y = 0; y < grid_height; y += sample_step) {
+      std::vector<double> row;
+      for (int x = 0; x < grid_width; x += sample_step) {
+        int index = y * grid_width + x;
+        if (index < static_cast<int>(esdf.data.size())) {
+          row.push_back(esdf.data[index]);
+        } else {
+          row.push_back(esdf.config.max_distance);
+        }
+      }
+      esdf_data.push_back(row);
+    }
+
+    data["esdf_map"] = {
+      {"config", {
+        {"origin", {{"x", esdf.config.origin.x}, {"y", esdf.config.origin.y}}},
+        {"resolution", sampled_resolution},  // 采样后的分辨率
+        {"width", sampled_width},            // 采样后的格子数
+        {"height", sampled_height},          // 采样后的格子数
+        {"max_distance", esdf.config.max_distance}
+      }},
+      {"data", esdf_data}
+    };
+
+    if (sample_step > 1) {
+      std::cout << "[Bridge] ESDF map downsampled: " << grid_width << "x" << grid_height
+                << " → " << sampled_width << "x" << sampled_height
+                << " (resolution: " << esdf.config.resolution << "m → " << sampled_resolution << "m)"
+                << ", data reduced: " << esdf.data.size() << " → " << (sampled_width * sampled_height)
+                << " (" << (100 - 100.0 * sampled_width * sampled_height / esdf.data.size()) << "% reduction)" << std::endl;
+    } else {
+      std::cout << "[Bridge] ESDF map sent without downsampling: " << sampled_width << "x" << sampled_height << std::endl;
+    }
+  } else {
+    std::cout << "[Bridge] WARNING: context.esdf_map is null!" << std::endl;
+  }
+
   // 总是输出动态障碍物数组，即使是空的
   nlohmann::json dyn_data = nlohmann::json::array();
   for (const auto& obs : context.dynamic_obstacles) {

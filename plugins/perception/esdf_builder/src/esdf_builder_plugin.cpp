@@ -91,7 +91,7 @@ bool ESDFBuilderPlugin::process(const plugin::PerceptionInput& input, planning::
   // 3. 计算 ESDF
   esdf_map_->computeESDF();
 
-  // 4. 创建 NavSim 格式的 ESDF 地图（用于可视化和其他用途）
+  // 4. 创建 NavSim 格式的 ESDF 地图（用于规划器和可视化）
   auto esdf_map_navsim = std::make_unique<planning::ESDFMap>();
   esdf_map_navsim->config.origin = origin;
   esdf_map_navsim->config.resolution = resolution_;
@@ -100,28 +100,51 @@ bool ESDFBuilderPlugin::process(const plugin::PerceptionInput& input, planning::
   esdf_map_navsim->config.max_distance = max_distance_;
   esdf_map_navsim->data.resize(grid_width_ * grid_height_, max_distance_);
 
-  // 复制距离场数据（取绝对值，因为可视化需要正值）
+  // 复制距离场数据（保留原始值，包括负值）
+  // ⚠️ 重要：planning::ESDFMap 应该保留负值（障碍物内部）
+  //    - 正值：自由空间，表示到最近障碍物的距离
+  //    - 负值：障碍物内部，表示到最近自由空间的距离
+  //    - 规划器需要负值来识别障碍物内部
+  // 注意：getDistance() 返回的已经是米单位（computeESDF 中已经乘以 grid_interval_）
   int occupied_count = 0;
+  int count_0_05 = 0, count_05_1 = 0, count_1_2 = 0, count_2_3 = 0, count_3_plus = 0;
   double min_dist = std::numeric_limits<double>::max();
   double max_dist = std::numeric_limits<double>::lowest();
 
   for (int i = 0; i < grid_width_ * grid_height_; ++i) {
-    double dist_grid = esdf_map_->getDistance(esdf_map_->vectornum2gridIndex(i));
-    double dist_meter = std::abs(dist_grid) * resolution_;  // 取绝对值
+    double dist_meter = esdf_map_->getDistance(esdf_map_->vectornum2gridIndex(i));
+    // ✅ 保留原始值（包括负值），不取绝对值
     esdf_map_navsim->data[i] = dist_meter;
 
-    if (dist_grid < 0.01) {  // 障碍物
+    // 统计时使用绝对值
+    double abs_dist = std::abs(dist_meter);
+    if (abs_dist < 0.01) {  // 障碍物
       occupied_count++;
+    } else {
+      // 统计距离分布
+      if (abs_dist < 0.5) count_0_05++;
+      else if (abs_dist < 1.0) count_05_1++;
+      else if (abs_dist < 2.0) count_1_2++;
+      else if (abs_dist < 3.0) count_2_3++;
+      else count_3_plus++;
     }
-    min_dist = std::min(min_dist, dist_meter);
-    max_dist = std::max(max_dist, dist_meter);
+
+    min_dist = std::min(min_dist, abs_dist);
+    max_dist = std::max(max_dist, abs_dist);
   }
 
   // 每 60 帧打印一次 ESDF 统计信息
   static int esdf_frame_count = 0;
   if (++esdf_frame_count % 60 == 0) {
-    std::cout << "[ESDFBuilder] ESDF stats: occupied=" << occupied_count
-              << ", min_dist=" << min_dist << "m, max_dist=" << max_dist << "m" << std::endl;
+    std::cout << "[ESDFBuilder] ESDF stats:\n"
+              << "  Occupied cells: " << occupied_count << "\n"
+              << "  Distance < 0.5m:  " << count_0_05 << " cells\n"
+              << "  Distance 0.5-1m:  " << count_05_1 << " cells\n"
+              << "  Distance 1-2m:    " << count_1_2 << " cells\n"
+              << "  Distance 2-3m:    " << count_2_3 << " cells\n"
+              << "  Distance > 3m:    " << count_3_plus << " cells\n"
+              << "  Min distance:     " << min_dist << "m\n"
+              << "  Max distance:     " << max_dist << "m" << std::endl;
   }
 
   // 5. 存储到规划上下文

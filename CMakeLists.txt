@@ -211,3 +211,19 @@ target_link_libraries(test_plugin_system
       ixwebsocket)  # 添加 ixwebsocket 库
 
 target_compile_features(test_plugin_system PRIVATE cxx_std_17)
+
+# ========== ESDF Map Test ==========
+add_executable(test_esdf_map
+    tests/test_esdf_map.cpp
+    plugins/perception/esdf_builder/src/esdf_map.cpp)
+
+target_include_directories(test_esdf_map
+    PRIVATE
+      plugins/perception/esdf_builder/include
+      ${EIGEN3_INCLUDE_DIR})
+
+target_link_libraries(test_esdf_map
+    PRIVATE
+      ${EIGEN3_LIBRARIES})
+
+target_compile_features(test_esdf_map PRIVATE cxx_std_17)

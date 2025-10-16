@@ -280,12 +280,14 @@ inline bool ESDFMap::isUnknown(const int &idx, const int &idy) const {
 
 inline bool ESDFMap::isOccWithSafeDis(const Eigen::Vector2i &index, const double &safe_dis) const {
   if (!isValidIndex(index)) return true; // 边界外视为不安全
-  return getDistance(index) < safe_dis / grid_interval_;
+  // ✅ FIX: getDistance() 返回米单位，safe_dis 也是米单位，直接比较
+  return getDistance(index) < safe_dis;
 }
 
 inline bool ESDFMap::isOccWithSafeDis(const int &idx, const int &idy, const double &safe_dis) const {
   if (!isValidIndex(idx, idy)) return true; // 边界外视为不安全
-  return getDistance(idx, idy) < safe_dis / grid_interval_;
+  // ✅ FIX: getDistance() 返回米单位，safe_dis 也是米单位，直接比较
+  return getDistance(idx, idy) < safe_dis;
 }
 
 inline uint8_t ESDFMap::CheckCollisionBycoord(const Eigen::Vector2d &pt) const {
@@ -301,7 +303,8 @@ inline uint8_t ESDFMap::CheckCollisionBycoord(const double ptx, const double pty
 inline double ESDFMap::getDistanceReal(const Eigen::Vector2d& pos) const {
   Eigen::Vector2i idx = ESDFcoord2gridIndex(pos);
   if (!isValidIndex(idx)) return 0.0; // 边界外返回 0
-  return getDistance(idx) * grid_interval_;
+  // ✅ FIX: getDistance() 已经返回米单位，不需要再乘以 grid_interval_
+  return getDistance(idx);
 }
 
 inline double ESDFMap::getDistance(const Eigen::Vector2i& id) const {

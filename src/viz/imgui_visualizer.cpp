@@ -607,9 +607,17 @@ void ImGuiVisualizer::renderScene() {
   }
 
   // 🎨 0.5. 绘制 ESDF 地图（可选，在占据栅格之后）
+  static int esdf_viz_log_count = 0;
   if (viz_options_.show_esdf_map && esdf_map_) {
     const auto& esdf = *esdf_map_;
     const auto& cfg = esdf.config;
+
+    // 调试信息（每 60 帧打印一次）
+    if (esdf_viz_log_count++ % 60 == 0) {
+      std::cout << "[Viz] Drawing ESDF map: " << cfg.width << "x" << cfg.height
+                << " @" << cfg.resolution << "m, origin=(" << cfg.origin.x << ", " << cfg.origin.y << ")"
+                << ", data_size=" << esdf.data.size() << std::endl;
+    }
 
     // 绘制 ESDF 边界框（青色虚线）
     double esdf_min_x = cfg.origin.x;
@@ -649,7 +657,7 @@ void ImGuiVisualizer::renderScene() {
     drawDashedLine(ImVec2(boundary_p3.x, boundary_p3.y), ImVec2(boundary_p4.x, boundary_p4.y), IM_COL32(0, 255, 255, 255), 3.0f);
     drawDashedLine(ImVec2(boundary_p4.x, boundary_p4.y), ImVec2(boundary_p1.x, boundary_p1.y), IM_COL32(0, 255, 255, 255), 3.0f);
 
-    // 绘制 ESDF 距离场（使用颜色编码）
+    // 绘制 ESDF 距离场栅格（使用颜色编码）
     // 采样绘制（每隔几个格子绘制一次，优化性能）
     int sample_step = std::max(1, static_cast<int>(2.0 / view_state_.zoom));  // 根据缩放调整采样率
 
@@ -660,42 +668,159 @@ void ImGuiVisualizer::renderScene() {
 
         double distance = esdf.data[idx];
 
+        // ✅ 可视化时取绝对值（障碍物内部是负值）
+        double abs_distance = std::abs(distance);
+
         // 跳过距离太大的格子（优化性能）
-        if (distance >= cfg.max_distance * 0.9) continue;
+        if (abs_distance >= cfg.max_distance * 0.9) continue;
 
-        // 计算格子的世界坐标
-        double world_x = cfg.origin.x + (x + 0.5) * cfg.resolution;
-        double world_y = cfg.origin.y + (y + 0.5) * cfg.resolution;
+        // 计算格子的世界坐标（左下角）
+        double world_x = cfg.origin.x + x * cfg.resolution;
+        double world_y = cfg.origin.y + y * cfg.resolution;
 
-        // 转换到屏幕坐标
-        auto center = worldToScreen(world_x, world_y);
-        float cell_size = cfg.resolution * config_.pixels_per_meter * view_state_.zoom * sample_step;
+        // 转换到屏幕坐标（左下角和右上角）
+        auto p1 = worldToScreen(world_x, world_y);
+        auto p2 = worldToScreen(world_x + cfg.resolution * sample_step,
+                                world_y + cfg.resolution * sample_step);
 
-        // 颜色编码：蓝色（远离障碍物）-> 绿色 -> 黄色 -> 红色（接近障碍物）
+        // 7 色渐变方案：
+        // 距离 = 0m (障碍物)      -> 深红色 (139, 0, 0)
+        // 距离 = 0.5m (很近)      -> 红色 (255, 0, 0)
+        // 距离 = 1.0m (近)        -> 橙色 (255, 165, 0)
+        // 距离 = 2.0m (中等)      -> 黄色 (255, 255, 0)
+        // 距离 = 3.0m (较远)      -> 绿色 (0, 255, 0)
+        // 距离 = 4.0m (远)        -> 青色 (0, 255, 255)
+        // 距离 >= 5.0m (很远)     -> 蓝色 (0, 0, 255)
+
         uint8_t r, g, b;
-        double normalized_dist = std::clamp(distance / cfg.max_distance, 0.0, 1.0);
+        double normalized_dist = std::clamp(abs_distance / cfg.max_distance, 0.0, 1.0);
 
-        if (normalized_dist > 0.5) {
-          // 蓝色 -> 绿色
-          double t = (normalized_dist - 0.5) * 2.0;
+        if (normalized_dist < 0.1) {
+          // 0.0 - 0.5m: 深红色 -> 红色
+          double t = normalized_dist / 0.1;
+          r = static_cast<uint8_t>(139 + (255 - 139) * t);
+          g = 0;
+          b = 0;
+        } else if (normalized_dist < 0.2) {
+          // 0.5m - 1.0m: 红色 -> 橙色
+          double t = (normalized_dist - 0.1) / 0.1;
+          r = 255;
+          g = static_cast<uint8_t>(165 * t);
+          b = 0;
+        } else if (normalized_dist < 0.4) {
+          // 1.0m - 2.0m: 橙色 -> 黄色
+          double t = (normalized_dist - 0.2) / 0.2;
+          r = 255;
+          g = static_cast<uint8_t>(165 + (255 - 165) * t);
+          b = 0;
+        } else if (normalized_dist < 0.6) {
+          // 2.0m - 3.0m: 黄色 -> 绿色
+          double t = (normalized_dist - 0.4) / 0.2;
+          r = static_cast<uint8_t>(255 * (1.0 - t));
+          g = 255;
+          b = 0;
+        } else if (normalized_dist < 0.8) {
+          // 3.0m - 4.0m: 绿色 -> 青色
+          double t = (normalized_dist - 0.6) / 0.2;
           r = 0;
-          g = static_cast<uint8_t>(255 * (1.0 - t));
+          g = 255;
           b = static_cast<uint8_t>(255 * t);
         } else {
-          // 红色 -> 黄色 -> 绿色
-          double t = normalized_dist * 2.0;
-          r = static_cast<uint8_t>(255 * (1.0 - t));
-          g = static_cast<uint8_t>(255 * t);
-          b = 0;
+          // 4.0m - 5.0m: 青色 -> 蓝色
+          double t = (normalized_dist - 0.8) / 0.2;
+          r = 0;
+          g = static_cast<uint8_t>(255 * (1.0 - t));
+          b = 255;
         }
 
-        uint32_t color = IM_COL32(r, g, b, 120);  // 半透明
+        uint32_t color = IM_COL32(r, g, b, 150);  // 半透明
 
         draw_list->AddRectFilled(
-          ImVec2(center.x - cell_size/2, center.y - cell_size/2),
-          ImVec2(center.x + cell_size/2, center.y + cell_size/2),
+          ImVec2(p1.x, p1.y),
+          ImVec2(p2.x, p2.y),
           color
         );
+      }
+    }
+
+    // 鼠标悬停显示 ESDF 距离值
+    ImVec2 mouse_pos = ImGui::GetMousePos();
+    ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
+    ImVec2 canvas_size = ImGui::GetContentRegionAvail();
+
+    // 检查鼠标是否在画布内
+    if (mouse_pos.x >= canvas_pos.x && mouse_pos.x <= canvas_pos.x + canvas_size.x &&
+        mouse_pos.y >= canvas_pos.y && mouse_pos.y <= canvas_pos.y + canvas_size.y) {
+
+      // 将鼠标屏幕坐标转换为世界坐标
+      float rel_x = mouse_pos.x - (canvas_pos.x + canvas_size.x / 2.0f);
+      float rel_y = (canvas_pos.y + canvas_size.y / 2.0f) - mouse_pos.y;  // Y 轴翻转
+
+      double world_x = view_state_.center_x + rel_x / (config_.pixels_per_meter * view_state_.zoom);
+      double world_y = view_state_.center_y + rel_y / (config_.pixels_per_meter * view_state_.zoom);
+
+      // 将世界坐标转换为 ESDF 栅格坐标
+      int grid_x = static_cast<int>((world_x - cfg.origin.x) / cfg.resolution);
+      int grid_y = static_cast<int>((world_y - cfg.origin.y) / cfg.resolution);
+
+      // 检查是否在 ESDF 地图范围内
+      if (grid_x >= 0 && grid_x < cfg.width && grid_y >= 0 && grid_y < cfg.height) {
+        int idx = grid_y * cfg.width + grid_x;
+
+        if (idx >= 0 && idx < static_cast<int>(esdf.data.size())) {
+          double distance = esdf.data[idx];
+
+          // 格式化距离值文本
+          // 显示原始值（包括负值），帮助调试
+          char dist_text[128];
+          if (std::abs(distance) < 0.01) {
+            snprintf(dist_text, sizeof(dist_text),
+                    "ESDF: OBSTACLE (%.3f m)\nGrid: (%d, %d)\nWorld: (%.2f, %.2f)",
+                    distance, grid_x, grid_y, world_x, world_y);
+          } else if (distance < 0) {
+            snprintf(dist_text, sizeof(dist_text),
+                    "ESDF: %.3f m (inside)\nGrid: (%d, %d)\nWorld: (%.2f, %.2f)",
+                    distance, grid_x, grid_y, world_x, world_y);
+          } else {
+            snprintf(dist_text, sizeof(dist_text),
+                    "ESDF: %.3f m\nGrid: (%d, %d)\nWorld: (%.2f, %.2f)",
+                    distance, grid_x, grid_y, world_x, world_y);
+          }
+
+          // 计算文本大小
+          ImVec2 text_size = ImGui::CalcTextSize(dist_text);
+
+          // 计算文本位置（鼠标右下方，带偏移）
+          ImVec2 text_pos = mouse_pos;
+          text_pos.x += 15.0f;  // 向右偏移
+          text_pos.y += 15.0f;  // 向下偏移
+
+          // 确保文本不超出画布边界
+          if (text_pos.x + text_size.x + 10 > canvas_pos.x + canvas_size.x) {
+            text_pos.x = mouse_pos.x - text_size.x - 15.0f;  // 显示在鼠标左侧
+          }
+          if (text_pos.y + text_size.y + 10 > canvas_pos.y + canvas_size.y) {
+            text_pos.y = mouse_pos.y - text_size.y - 15.0f;  // 显示在鼠标上方
+          }
+
+          // 绘制背景框
+          draw_list->AddRectFilled(
+            ImVec2(text_pos.x - 5, text_pos.y - 5),
+            ImVec2(text_pos.x + text_size.x + 5, text_pos.y + text_size.y + 5),
+            IM_COL32(0, 0, 0, 200)  // 半透明黑色背景
+          );
+
+          // 绘制边框
+          draw_list->AddRect(
+            ImVec2(text_pos.x - 5, text_pos.y - 5),
+            ImVec2(text_pos.x + text_size.x + 5, text_pos.y + text_size.y + 5),
+            IM_COL32(0, 255, 255, 255),  // 青色边框
+            0.0f, 0, 2.0f
+          );
+
+          // 绘制文本
+          draw_list->AddText(text_pos, IM_COL32(255, 255, 255, 255), dist_text);
+        }
       }
     }
   }
@@ -1407,7 +1532,17 @@ void ImGuiVisualizer::renderLegendPanel() {
   ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "[Cyan Border]");
   ImGui::Indent();
   if (viz_options_.show_esdf_map) {
-    ImGui::BulletText("Color: Blue (far) -> Green -> Yellow -> Red (near)");
+    ImGui::BulletText("Color gradient (distance from obstacles):");
+    ImGui::Indent();
+    ImGui::TextColored(ImVec4(0.545f, 0.0f, 0.0f, 1.0f), "  0.0m: Dark Red");
+    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "  0.5m: Red");
+    ImGui::TextColored(ImVec4(1.0f, 0.647f, 0.0f, 1.0f), "  1.0m: Orange");
+    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "  2.0m: Yellow");
+    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "  3.0m: Green");
+    ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "  4.0m: Cyan");
+    ImGui::TextColored(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), "  5.0m: Blue");
+    ImGui::Unindent();
+    ImGui::BulletText("Hover mouse to see exact distance value");
   }
   ImGui::Unindent();
 

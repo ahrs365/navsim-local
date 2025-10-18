@@ -1,57 +1,99 @@
-# NavSim-Local 配置文件
+# NavSim Local 配置文件
 
-本目录包含 navsim-local 的配置文件。
+本目录包含 **在线模式**（`navsim_algo`）的配置文件。
+
+> **注意**：离线模式（`navsim_local_debug`）使用命令行参数，不需要配置文件。
 
 ## 📁 目录结构
 
 ```
 config/
 ├── README.md       # 本文档
-└── default.json    # 默认配置（带可视化）
+└── default.json    # 默认配置
 ```
+
+## 🎯 配置文件用途
+
+配置文件用于**在线模式**，定义：
+
+- **规划器选择**：主规划器、降级规划器
+- **感知插件配置**：启用哪些感知插件及其参数
+- **算法参数**：各规划器的具体参数
+- **可视化选项**：是否启用 ImGui 桌面可视化
 
 ## 🚀 快速开始
 
-### 1. 使用默认配置
-
-默认配置已启用可视化和 A* 规划器：
+### 方式 1：使用一键脚本（推荐）
 
 ```bash
 ./build_with_visualization.sh
 ```
 
-脚本会自动编译并运行，无需手动指定配置文件。
+脚本会：
+1. 编译项目（启用可视化）
+2. 自动运行 `navsim_algo`
+3. 使用 `config/default.json` 配置
 
-### 2. 修改配置
+### 方式 2：手动运行
 
-直接编辑 `config/default.json`：
+```bash
+# 1. 确保 navsim-online 服务器已启动
+cd navsim-online
+bash run_navsim.sh
+
+# 2. 运行算法程序（新终端）
+cd navsim-local
+./build/navsim_algo ws://127.0.0.1:8080/ws demo --config=config/default.json
+```
+
+## ⚙️ 修改配置
+
+### 1. 编辑配置文件
+
+```bash
+vim config/default.json
+```
+
+### 2. 配置示例
 
 ```json
 {
   "algorithm": {
-    "primary_planner": "AStarPlanner",
-    "enable_visualization": true
+    "primary_planner": "AstarPlanner",
+    "fallback_planner": "StraightLinePlanner",
+    "max_computation_time_ms": 25.0,
+    "enable_visualization": false
   },
   "perception": {
     "plugins": [
       {
         "name": "GridMapBuilder",
+        "enabled": true,
         "params": {
+          "resolution": 0.1,
           "map_width": 30.0,
-          "map_height": 30.0,
-          "resolution": 0.1
+          "map_height": 30.0
         }
       }
     ]
+  },
+  "planning": {
+    "AstarPlanner": {
+      "heuristic_weight": 1.2,
+      "step_size": 0.5,
+      "max_iterations": 10000
+    }
   }
 }
 ```
 
-### 3. 手动运行
+### 3. 重启算法程序
 
-如果需要手动运行：
+配置文件修改后，需要重启 `navsim_algo`（无需重启服务器）：
 
 ```bash
+# 按 Ctrl+C 停止当前程序
+# 重新运行
 ./build/navsim_algo ws://127.0.0.1:8080/ws demo --config=config/default.json
 ```
 

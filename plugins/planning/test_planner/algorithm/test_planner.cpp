@@ -1,42 +1,21 @@
-#include "straight_path_planner.hpp"
+#include "test_planner.hpp"
 #include <chrono>
 #include <cmath>
 
-namespace straight_path_planner {
+namespace test_planner {
 namespace algorithm {
 
-// ========== Config ==========
+// ========== TestPlanner ==========
 
-StraightPathPlanner::Config StraightPathPlanner::Config::fromJson(const nlohmann::json& json) {
-  Config config;
-  
-  if (json.contains("max_velocity")) {
-    config.max_velocity = json["max_velocity"].get<double>();
-  }
-  if (json.contains("max_acceleration")) {
-    config.max_acceleration = json["max_acceleration"].get<double>();
-  }
-  if (json.contains("step_size")) {
-    config.step_size = json["step_size"].get<double>();
-  }
-  if (json.contains("max_iterations")) {
-    config.max_iterations = json["max_iterations"].get<int>();
-  }
-  
-  return config;
-}
-
-// ========== StraightPathPlanner ==========
-
-StraightPathPlanner::StraightPathPlanner(const Config& config)
+TestPlanner::TestPlanner(const Config& config)
     : config_(config) {
 }
 
-void StraightPathPlanner::setConfig(const Config& config) {
+void TestPlanner::setConfig(const Config& config) {
   config_ = config;
 }
 
-StraightPathPlanner::Result StraightPathPlanner::plan(
+TestPlanner::Result TestPlanner::plan(
     const Eigen::Vector3d& start,
     const Eigen::Vector3d& goal) {
   
@@ -75,10 +54,10 @@ StraightPathPlanner::Result StraightPathPlanner::plan(
   return result;
 }
 
-void StraightPathPlanner::reset() {
+void TestPlanner::reset() {
   // TODO: 重置算法状态
 }
 
 } // namespace algorithm
-} // namespace straight_path_planner
+} // namespace test_planner
 

@@ -55,15 +55,26 @@ public:
   
   /**
    * @brief 执行规划
-   * 
+   *
    * @param context 规划上下文（包含自车状态、目标、地图等）
+   * @param deadline 截止时间（规划器应该在此时间前完成）
    * @param result 规划结果（输出）
    * @return 规划是否成功
    */
   bool plan(
       const navsim::planning::PlanningContext& context,
+      std::chrono::milliseconds deadline,
       navsim::plugin::PlanningResult& result) override;
-  
+
+  /**
+   * @brief 检查规划器是否可用
+   *
+   * @param context 规划上下文
+   * @return {是否可用, 不可用原因}
+   */
+  std::pair<bool, std::string> isAvailable(
+      const navsim::planning::PlanningContext& context) const override;
+
   /**
    * @brief 重置插件状态
    */
@@ -83,12 +94,11 @@ private:
    * @brief 转换平台数据 → 算法数据
    */
   Eigen::Vector3d convertPose(const navsim::planning::Pose2d& pose) const;
-  
+
   /**
-   * @brief 转换算法数据 → 平台数据
+   * @brief 从 JSON 配置解析算法配置
    */
-  navsim::planning::Trajectory convertTrajectory(
-      const std::vector<algorithm::{{PLUGIN_NAME}}::Waypoint>& path) const;
+  algorithm::{{PLUGIN_NAME}}::Config parseConfig(const nlohmann::json& json) const;
 };
 
 } // namespace adapter

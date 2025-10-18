@@ -22,6 +22,9 @@ class {{PLUGIN_NAME}} {
 public:
   /**
    * @brief 算法配置参数
+   *
+   * 注意：这是纯数据结构，不包含 JSON 解析逻辑。
+   * JSON 解析应该在 adapter 层完成。
    */
   struct Config {
     // TODO: 添加您的配置参数
@@ -29,9 +32,6 @@ public:
     double max_acceleration = 2.0;  // 最大加速度 (m/s²)
     double step_size = 0.1;         // 步长 (m)
     int max_iterations = 1000;      // 最大迭代次数
-    
-    // 从 JSON 加载配置（可选）
-    static Config fromJson(const nlohmann::json& json);
   };
   
   /**

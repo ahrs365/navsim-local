@@ -3,12 +3,13 @@
 #include <Eigen/Dense>
 #include <vector>
 #include <memory>
+#include "jps_planner.hpp"  // 使用 JPS 算法
 
-namespace straight_path_planner {
+namespace test_planner {
 namespace algorithm {
 
 /**
- * @brief StraightPathPlanner 算法核心实现
+ * @brief TestPlanner 算法核心实现
  * 
  * 这是纯算法层，不依赖任何平台 API。
  * 只使用标准库和 Eigen，便于复用到其他项目。
@@ -18,10 +19,13 @@ namespace algorithm {
  * - 无状态或状态可重置
  * - 易于单元测试
  */
-class StraightPathPlanner {
+class TestPlanner {
 public:
   /**
    * @brief 算法配置参数
+   *
+   * 注意：这是纯数据结构，不包含 JSON 解析逻辑。
+   * JSON 解析应该在 adapter 层完成。
    */
   struct Config {
     // TODO: 添加您的配置参数
@@ -29,9 +33,6 @@ public:
     double max_acceleration = 2.0;  // 最大加速度 (m/s²)
     double step_size = 0.1;         // 步长 (m)
     int max_iterations = 1000;      // 最大迭代次数
-    
-    // 从 JSON 加载配置（可选）
-    static Config fromJson(const nlohmann::json& json);
   };
   
   /**
@@ -56,8 +57,8 @@ public:
   /**
    * @brief 构造函数
    */
-  StraightPathPlanner() = default;
-  explicit StraightPathPlanner(const Config& config);
+  TestPlanner() = default;
+  explicit TestPlanner(const Config& config);
   
   /**
    * @brief 设置配置
@@ -73,7 +74,7 @@ public:
    * 
    * 示例：
    * ```cpp
-   * StraightPathPlanner planner(config);
+   * TestPlanner planner(config);
    * auto result = planner.plan(
    *   Eigen::Vector3d(0, 0, 0),
    *   Eigen::Vector3d(10, 10, 0)
@@ -102,5 +103,5 @@ private:
 };
 
 } // namespace algorithm
-} // namespace straight_path_planner
+} // namespace test_planner
 

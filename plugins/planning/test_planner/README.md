@@ -1,10 +1,10 @@
-# StraightPathPlanner Planner Plugin
+# TestPlanner Planner Plugin
 
-Simple straight-line path planner for validation
+Test planner for scaffolding tool validation
 
 ## 📋 概述
 
-- **插件名称**: StraightPathPlanner
+- **插件名称**: TestPlanner
 - **插件类型**: 规划器 (Planner)
 - **版本**: 1.0.0
 - **作者**: NavSim Team
@@ -14,16 +14,16 @@ Simple straight-line path planner for validation
 本插件采用三层解耦架构：
 
 ```
-straight_path_planner_plugin/
+test_planner_plugin/
 ├── algorithm/              # 算法层（纯算法，无平台依赖）
-│   ├── straight_path_planner.hpp
-│   └── straight_path_planner.cpp
+│   ├── test_planner.hpp
+│   └── test_planner.cpp
 ├── adapter/                # 适配器层（平台接口适配）
-│   ├── straight_path_planner_plugin.hpp
-│   ├── straight_path_planner_plugin.cpp
+│   ├── test_planner_plugin.hpp
+│   ├── test_planner_plugin.cpp
 │   └── register.cpp
 ├── tests/                  # 测试（可选）
-│   └── test_straight_path_planner.cpp
+│   └── test_test_planner.cpp
 ├── CMakeLists.txt
 └── README.md
 ```
@@ -48,7 +48,7 @@ straight_path_planner_plugin/
 cd navsim-local
 mkdir -p build && cd build
 cmake ..
-make straight_path_planner_plugin
+make test_planner_plugin
 ```
 
 ### 使用
@@ -57,7 +57,7 @@ make straight_path_planner_plugin
 # 使用本地调试工具测试
 ./build/navsim_local_debug \
   --scenario scenarios/simple_corridor.json \
-  --planner StraightPathPlanner
+  --planner TestPlanner
 ```
 
 ## ⚙️ 配置参数
@@ -73,7 +73,7 @@ make straight_path_planner_plugin
 
 ```json
 {
-  "StraightPathPlanner": {
+  "TestPlanner": {
     "max_velocity": 3.0,
     "max_acceleration": 2.5,
     "step_size": 0.05,
@@ -91,28 +91,28 @@ TODO: 添加性能测试结果
 ```bash
 # 运行单元测试
 cd build
-ctest -R straight_path_planner
+ctest -R test_planner
 ```
 
 ## 📝 开发指南
 
 ### 修改算法
 
-1. 编辑 `algorithm/straight_path_planner.cpp` 中的 `plan()` 方法
+1. 编辑 `algorithm/test_planner.cpp` 中的 `plan()` 方法
 2. 添加您的算法逻辑
 3. 重新编译并测试
 
 ### 添加配置参数
 
-1. 在 `algorithm/straight_path_planner.hpp` 的 `Config` 结构体中添加参数
+1. 在 `algorithm/test_planner.hpp` 的 `Config` 结构体中添加参数
 2. 在 `Config::fromJson()` 中添加 JSON 解析逻辑
-3. 在 `adapter/straight_path_planner_plugin.cpp` 的 `initialize()` 中打印新参数
+3. 在 `adapter/test_planner_plugin.cpp` 的 `initialize()` 中打印新参数
 
 ### 添加依赖
 
 如果需要额外的依赖（如栅格地图、ESDF 等）：
 
-1. 在 `adapter/straight_path_planner_plugin.hpp` 的 `getMetadata()` 中设置：
+1. 在 `adapter/test_planner_plugin.hpp` 的 `getMetadata()` 中设置：
    ```cpp
    metadata.requires_occupancy_grid = true;
    metadata.requires_esdf_map = true;

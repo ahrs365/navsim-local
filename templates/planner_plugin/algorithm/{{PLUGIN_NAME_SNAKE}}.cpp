@@ -5,27 +5,6 @@
 namespace {{NAMESPACE}} {
 namespace algorithm {
 
-// ========== Config ==========
-
-{{PLUGIN_NAME}}::Config {{PLUGIN_NAME}}::Config::fromJson(const nlohmann::json& json) {
-  Config config;
-  
-  if (json.contains("max_velocity")) {
-    config.max_velocity = json["max_velocity"].get<double>();
-  }
-  if (json.contains("max_acceleration")) {
-    config.max_acceleration = json["max_acceleration"].get<double>();
-  }
-  if (json.contains("step_size")) {
-    config.step_size = json["step_size"].get<double>();
-  }
-  if (json.contains("max_iterations")) {
-    config.max_iterations = json["max_iterations"].get<int>();
-  }
-  
-  return config;
-}
-
 // ========== {{PLUGIN_NAME}} ==========
 
 {{PLUGIN_NAME}}::{{PLUGIN_NAME}}(const Config& config)

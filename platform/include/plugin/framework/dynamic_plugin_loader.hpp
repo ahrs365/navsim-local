@@ -98,6 +98,22 @@ public:
   std::string findPluginLibrary(const std::string& plugin_name) const;
 
   /**
+   * @brief 解析插件路径（支持短名称和完整路径）
+   *
+   * 如果 plugin_spec 包含 '/' 或以 '.so' 结尾，视为完整路径
+   * 否则视为短名称，按以下顺序查找：
+   * 1. plugins/planning/lib{name}.so
+   * 2. plugins/perception/lib{name}.so
+   * 3. ~/.navsim/plugins/lib{name}.so
+   * 4. ./external_plugins/{name}/build/lib{name}.so
+   * 5. $NAVSIM_PLUGIN_PATH/lib{name}.so
+   *
+   * @param plugin_spec 插件规格（短名称或完整路径）
+   * @return 解析后的完整路径，如果未找到则返回空字符串
+   */
+  std::string resolvePluginPath(const std::string& plugin_spec) const;
+
+  /**
    * @brief 获取配置加载器
    *
    * @return 配置加载器指针，如果未加载配置则返回 nullptr

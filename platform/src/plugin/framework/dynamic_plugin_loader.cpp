@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>  // for getenv
 
 namespace fs = std::filesystem;
 
@@ -21,13 +22,35 @@ DynamicPluginLoader::~DynamicPluginLoader() {
 }
 
 void DynamicPluginLoader::initializeDefaultSearchPaths() {
-  // 添加默认搜索路径
-  search_paths_.push_back("./plugins");
-  search_paths_.push_back("./build/plugins");
+  // 按照 REFACTORING_PROPOSAL.md 中定义的顺序添加搜索路径
+
+  // 1. 平台内置插件目录
+  search_paths_.push_back("./plugins/planning");
+  search_paths_.push_back("./plugins/perception");
+  search_paths_.push_back("./build/plugins/planning");
+  search_paths_.push_back("./build/plugins/perception");
+
+  // 2. 用户插件目录 - ~/.navsim/plugins/
+  const char* home = getenv("HOME");
+  if (home) {
+    fs::path user_plugin_dir = fs::path(home) / ".navsim" / "plugins";
+    search_paths_.push_back(user_plugin_dir.string());
+  }
+
+  // 3. 外部插件目录 - ./external_plugins/
+  search_paths_.push_back("./external_plugins");
+
+  // 4. 环境变量 - $NAVSIM_PLUGIN_PATH
+  const char* env_path = getenv("NAVSIM_PLUGIN_PATH");
+  if (env_path) {
+    search_paths_.push_back(env_path);
+  }
+
+  // 5. 系统插件目录
   search_paths_.push_back("/usr/local/lib/navsim_plugins");
   search_paths_.push_back("/usr/lib/navsim_plugins");
-  
-  // 添加当前可执行文件所在目录的 plugins 子目录
+
+  // 6. 添加当前可执行文件所在目录的 plugins 子目录
   char exe_path[1024];
   ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
   if (len != -1) {
@@ -64,7 +87,7 @@ std::string DynamicPluginLoader::pluginNameToLibraryName(const std::string& plug
 
 std::string DynamicPluginLoader::findPluginLibrary(const std::string& plugin_name) const {
   std::string lib_name = pluginNameToLibraryName(plugin_name);
-  
+
   // 在搜索路径中查找
   for (const auto& search_path : search_paths_) {
     // 尝试直接路径
@@ -72,7 +95,7 @@ std::string DynamicPluginLoader::findPluginLibrary(const std::string& plugin_nam
     if (fs::exists(direct_path)) {
       return direct_path.string();
     }
-    
+
     // 尝试在子目录中查找
     // 例如: plugins/perception/grid_map_builder/libgrid_map_builder_plugin.so
     try {
@@ -86,8 +109,86 @@ std::string DynamicPluginLoader::findPluginLibrary(const std::string& plugin_nam
       continue;
     }
   }
-  
+
   return "";  // 未找到
+}
+
+std::string DynamicPluginLoader::resolvePluginPath(const std::string& plugin_spec) const {
+  // 判断是否为完整路径
+  // 如果包含 '/' 或以 '.so' 结尾，视为完整路径
+  if (plugin_spec.find('/') != std::string::npos ||
+      plugin_spec.size() >= 3 && plugin_spec.substr(plugin_spec.size() - 3) == ".so") {
+    // 完整路径 - 直接检查是否存在
+    if (fs::exists(plugin_spec)) {
+      return fs::absolute(plugin_spec).string();
+    } else {
+      std::cerr << "[DynamicPluginLoader] Plugin file not found: " << plugin_spec << std::endl;
+      return "";
+    }
+  }
+
+  // 短名称 - 按照定义的顺序查找
+  std::string lib_name = pluginNameToLibraryName(plugin_spec);
+
+  // 定义查找路径（按优先级排序）
+  std::vector<std::string> search_order;
+
+  // 1. plugins/planning/lib{name}.so
+  search_order.push_back("plugins/planning/" + lib_name);
+  search_order.push_back("build/plugins/planning/" + lib_name);
+
+  // 2. plugins/perception/lib{name}.so
+  search_order.push_back("plugins/perception/" + lib_name);
+  search_order.push_back("build/plugins/perception/" + lib_name);
+
+  // 3. ~/.navsim/plugins/lib{name}.so
+  const char* home = getenv("HOME");
+  if (home) {
+    fs::path user_plugin_path = fs::path(home) / ".navsim" / "plugins" / lib_name;
+    search_order.push_back(user_plugin_path.string());
+  }
+
+  // 4. ./external_plugins/{name}/build/lib{name}.so
+  // 从短名称提取插件名（去掉 Plugin 后缀）
+  std::string plugin_dir_name = plugin_spec;
+  if (plugin_dir_name.size() > 6 && plugin_dir_name.substr(plugin_dir_name.size() - 6) == "Plugin") {
+    plugin_dir_name = plugin_dir_name.substr(0, plugin_dir_name.size() - 6);
+  }
+  // 转换为 snake_case
+  std::string snake_case;
+  for (size_t i = 0; i < plugin_dir_name.size(); ++i) {
+    char c = plugin_dir_name[i];
+    if (std::isupper(c) && i > 0) {
+      snake_case += '_';
+    }
+    snake_case += std::tolower(c);
+  }
+  search_order.push_back("external_plugins/" + snake_case + "/build/" + lib_name);
+
+  // 5. $NAVSIM_PLUGIN_PATH/lib{name}.so
+  const char* env_path = getenv("NAVSIM_PLUGIN_PATH");
+  if (env_path) {
+    fs::path env_plugin_path = fs::path(env_path) / lib_name;
+    search_order.push_back(env_plugin_path.string());
+  }
+
+  // 按顺序查找
+  for (const auto& path : search_order) {
+    if (fs::exists(path)) {
+      std::cout << "[DynamicPluginLoader] Found plugin '" << plugin_spec
+                << "' at: " << path << std::endl;
+      return fs::absolute(path).string();
+    }
+  }
+
+  // 未找到 - 打印搜索路径
+  std::cerr << "[DynamicPluginLoader] Failed to find plugin: " << plugin_spec << std::endl;
+  std::cerr << "[DynamicPluginLoader] Searched in:" << std::endl;
+  for (const auto& path : search_order) {
+    std::cerr << "  - " << path << std::endl;
+  }
+
+  return "";
 }
 
 bool DynamicPluginLoader::loadPlugin(const std::string& plugin_name, const std::string& library_path) {
@@ -96,25 +197,22 @@ bool DynamicPluginLoader::loadPlugin(const std::string& plugin_name, const std::
     std::cout << "[DynamicPluginLoader] Plugin '" << plugin_name << "' is already loaded" << std::endl;
     return true;
   }
-  
+
   // 确定库文件路径
   std::string lib_path = library_path;
   if (lib_path.empty()) {
-    lib_path = findPluginLibrary(plugin_name);
+    // 使用新的 resolvePluginPath() 方法，支持短名称和完整路径
+    lib_path = resolvePluginPath(plugin_name);
     if (lib_path.empty()) {
-      std::cerr << "[DynamicPluginLoader] Failed to find library for plugin: " << plugin_name << std::endl;
-      std::cerr << "[DynamicPluginLoader] Searched in:" << std::endl;
-      for (const auto& path : search_paths_) {
-        std::cerr << "  - " << path << std::endl;
-      }
+      // resolvePluginPath() 已经打印了详细的错误信息
       return false;
     }
-  }
-  
-  // 检查文件是否存在
-  if (!fs::exists(lib_path)) {
-    std::cerr << "[DynamicPluginLoader] Library file not found: " << lib_path << std::endl;
-    return false;
+  } else {
+    // 如果提供了路径，也使用 resolvePluginPath() 进行解析
+    lib_path = resolvePluginPath(library_path);
+    if (lib_path.empty()) {
+      return false;
+    }
   }
   
   std::cout << "[DynamicPluginLoader] Loading plugin '" << plugin_name << "' from: " << lib_path << std::endl;

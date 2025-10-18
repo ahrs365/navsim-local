@@ -27,8 +27,9 @@ void registerEsdfBuilderPlugin() {
 } // namespace navsim
 
 // 导出 C 风格的注册函数，供动态加载器使用
+// 注意：函数名必须与插件名称保持一致（ESDFBuilder -> registerESDFBuilderPlugin）
 extern "C" {
-  void registerEsdfBuilderPlugin() {
+  void registerESDFBuilderPlugin() {
     navsim::plugins::perception::registerEsdfBuilderPlugin();
   }
 }

@@ -9,8 +9,7 @@
 // 包含所有插件的注册函数声明
 #include "perception/grid_map_builder/include/grid_map_builder_plugin_register.hpp"
 #include "perception/esdf_builder/include/esdf_builder_plugin_register.hpp"
-#include "planning/straight_line/include/straight_line_planner_plugin_register.hpp"
-#include "planning/astar/include/astar_planner_plugin_register.hpp"
+#include "planning/straight_line_planner/adapter/straight_line_plugin.hpp"
 #include "planning/jps_planner_plugin/include/jps_planner_plugin_register.hpp"
 
 namespace navsim {
@@ -18,15 +17,14 @@ namespace plugins {
 
 /**
  * @brief 加载所有内置插件
- * 
+ *
  * 这个函数会被 plugin_init.cpp 调用，确保所有插件被注册。
  */
 void loadAllBuiltinPlugins() {
   // 调用所有插件的注册函数
   perception::registerGridMapBuilderPlugin();
   perception::registerEsdfBuilderPlugin();
-  planning::registerStraightLinePlannerPlugin();
-  planning::registerAStarPlannerPlugin();
+  straight_line::adapter::registerStraightLinePlugin();
   planning::registerJpsPlannerPlugin();
 }
 

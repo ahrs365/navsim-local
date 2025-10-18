@@ -3,13 +3,12 @@
 #include <Eigen/Dense>
 #include <vector>
 #include <memory>
-#include "jps_planner.hpp"  // 使用 JPS 算法
 
-namespace test_planner {
+namespace straight_line {
 namespace algorithm {
 
 /**
- * @brief TestPlanner 算法核心实现
+ * @brief StraightLine 算法核心实现
  * 
  * 这是纯算法层，不依赖任何平台 API。
  * 只使用标准库和 Eigen，便于复用到其他项目。
@@ -19,7 +18,7 @@ namespace algorithm {
  * - 无状态或状态可重置
  * - 易于单元测试
  */
-class TestPlanner {
+class StraightLine {
 public:
   /**
    * @brief 算法配置参数
@@ -28,11 +27,11 @@ public:
    * JSON 解析应该在 adapter 层完成。
    */
   struct Config {
-    // TODO: 添加您的配置参数
-    double max_velocity = 2.0;      // 最大速度 (m/s)
-    double max_acceleration = 2.0;  // 最大加速度 (m/s²)
-    double step_size = 0.1;         // 步长 (m)
-    int max_iterations = 1000;      // 最大迭代次数
+    double default_velocity = 2.0;        // 默认速度 (m/s)
+    double time_step = 0.1;               // 时间步长 (s)
+    double planning_horizon = 5.0;        // 规划时域 (s)
+    bool use_trapezoidal_profile = true;  // 是否使用梯形速度曲线
+    double max_acceleration = 2.0;        // 最大加速度 (m/s²)
   };
   
   /**
@@ -41,7 +40,9 @@ public:
   struct Waypoint {
     Eigen::Vector3d position;  // (x, y, yaw)
     double velocity = 0.0;     // 速度 (m/s)
+    double acceleration = 0.0; // 加速度 (m/s²)
     double timestamp = 0.0;    // 时间戳 (s)
+    double path_length = 0.0;  // 路径长度 (m)
   };
   
   /**
@@ -57,8 +58,8 @@ public:
   /**
    * @brief 构造函数
    */
-  TestPlanner() = default;
-  explicit TestPlanner(const Config& config);
+  StraightLine() = default;
+  explicit StraightLine(const Config& config);
   
   /**
    * @brief 设置配置
@@ -74,7 +75,7 @@ public:
    * 
    * 示例：
    * ```cpp
-   * TestPlanner planner(config);
+   * StraightLine planner(config);
    * auto result = planner.plan(
    *   Eigen::Vector3d(0, 0, 0),
    *   Eigen::Vector3d(10, 10, 0)
@@ -96,12 +97,31 @@ public:
   void reset();
   
 private:
+  /**
+   * @brief 生成直线路径点
+   */
+  std::vector<Waypoint> generateStraightLine(
+      const Eigen::Vector3d& start,
+      const Eigen::Vector3d& goal,
+      int num_points) const;
+
+  /**
+   * @brief 计算匀速速度曲线
+   */
+  void computeVelocityProfile(
+      std::vector<Waypoint>& trajectory,
+      double total_distance) const;
+
+  /**
+   * @brief 计算梯形速度曲线
+   */
+  void computeTrapezoidalProfile(
+      std::vector<Waypoint>& trajectory,
+      double total_distance) const;
+
   Config config_;
-  
-  // TODO: 添加您的私有成员变量
-  // 例如：地图、缓存、统计信息等
 };
 
 } // namespace algorithm
-} // namespace test_planner
+} // namespace straight_line
 

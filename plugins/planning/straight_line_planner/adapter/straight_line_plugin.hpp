@@ -3,16 +3,16 @@
 #include "plugin/framework/planner_plugin_interface.hpp"
 #include "plugin/data/planning_result.hpp"
 #include "core/planning_context.hpp"
-#include "../algorithm/jps_planner.hpp"  // 使用 JPS 算法
+#include "../algorithm/straight_line.hpp"
 #include <nlohmann/json.hpp>
 #include <memory>
 #include <string>
 
-namespace test_planner {
+namespace straight_line {
 namespace adapter {
 
 /**
- * @brief TestPlanner 插件适配器
+ * @brief StraightLine 插件适配器
  * 
  * 这是适配器层，负责：
  * 1. 实现平台插件接口
@@ -23,17 +23,17 @@ namespace adapter {
  * - 薄适配层，逻辑尽量放在 algorithm 层
  * - 只做数据转换，不做算法逻辑
  */
-class TestPlannerPlugin : public navsim::plugin::PlannerPluginInterface {
+class StraightLinePlugin : public navsim::plugin::PlannerPluginInterface {
 public:
   /**
    * @brief 构造函数
    */
-  TestPlannerPlugin();
+  StraightLinePlugin();
   
   /**
    * @brief 析构函数
    */
-  ~TestPlannerPlugin() override = default;
+  ~StraightLinePlugin() override = default;
   
   // ========== 插件接口实现 ==========
   
@@ -81,15 +81,15 @@ public:
   void reset() override;
   
 private:
-  // 算法核心实例（使用 JPS 算法）
-  std::unique_ptr<JPS::JPSPlanner> planner_;
-
+  // 算法核心实例
+  std::unique_ptr<algorithm::StraightLine> planner_;
+  
   // 配置
-  JPS::JPSConfig config_;
-
+  algorithm::StraightLine::Config config_;
+  
   // 是否已初始化
   bool initialized_ = false;
-
+  
   /**
    * @brief 转换平台数据 → 算法数据
    */
@@ -98,9 +98,16 @@ private:
   /**
    * @brief 从 JSON 配置解析算法配置
    */
-  JPS::JPSConfig parseConfig(const nlohmann::json& json) const;
+  algorithm::StraightLine::Config parseConfig(const nlohmann::json& json) const;
 };
 
+/**
+ * @brief 注册 StraightLine 插件
+ *
+ * 这个函数会被插件加载器调用，用于注册插件到全局注册表。
+ */
+void registerStraightLinePlugin();
+
 } // namespace adapter
-} // namespace test_planner
+} // namespace straight_line
 

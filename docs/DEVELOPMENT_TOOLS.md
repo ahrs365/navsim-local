@@ -2,8 +2,6 @@
 
 本文档介绍 NavSim 提供的三个核心开发工具，帮助您快速开发和测试插件。
 
----
-
 ## 📋 目录
 
 1. [工具概览](#工具概览)
@@ -12,30 +10,26 @@
 4. [性能分析工具](#性能分析工具)
 5. [完整工作流示例](#完整工作流示例)
 
----
-
 ## 🛠️ 工具概览
 
-| 工具 | 功能 | 用途 |
-|------|------|------|
-| `navsim_create_plugin.py` | 插件脚手架 | 5 分钟创建新插件 |
-| `navsim_create_scenario.py` | 场景生成 | 快速创建测试场景 |
-| `navsim_benchmark.py` | 性能分析 | 批量测试和对比 |
-
----
+| 工具 | 功能 | 用途 | 节省时间 |
+|------|------|------|----------|
+| `navsim_create_plugin.py` | 插件脚手架 | 5 分钟创建新插件 | ~1.5 小时 |
+| `navsim_create_scenario.py` | 场景生成 | 快速创建测试场景 | ~30 分钟 |
+| `navsim_benchmark.py` | 性能分析 | 批量测试和对比 | ~1 小时 |
 
 ## 🏗️ 插件脚手架工具
 
 ### 功能
 
 自动生成插件模板代码，包括：
-- `algorithm/` 层（纯算法实现）
-- `adapter/` 层（平台接口适配）
-- `CMakeLists.txt`
-- `README.md`
-- 注册代码
+- ✅ `algorithm/` 层（纯算法实现）
+- ✅ `adapter/` 层（平台接口适配）
+- ✅ `CMakeLists.txt`（构建配置）
+- ✅ `README.md`（插件文档）
+- ✅ 注册代码（双重注册机制）
 
-### 用法
+### 基本用法
 
 ```bash
 python3 tools/navsim_create_plugin.py \

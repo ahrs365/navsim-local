@@ -1,6 +1,6 @@
 #include "{{PLUGIN_NAME_SNAKE}}_plugin.hpp"
 #include "plugin/framework/plugin_registry.hpp"
-#include <iostream>
+#include <memory>
 
 namespace {{NAMESPACE}} {
 namespace adapter {

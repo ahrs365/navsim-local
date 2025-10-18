@@ -22,14 +22,29 @@ target_include_directories({{PLUGIN_NAME_SNAKE}}_plugin
         $<INSTALL_INTERFACE:include/navsim_plugins/{{PLUGIN_NAME_SNAKE}}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/algorithm
-        ${CMAKE_CURRENT_SOURCE_DIR}/adapter)
+        ${CMAKE_CURRENT_SOURCE_DIR}/adapter
+        ${CMAKE_SOURCE_DIR}/platform/include  # Platform headers (required)
+        # ${CMAKE_SOURCE_DIR}/plugins/perception/esdf_builder/include  # Uncomment if you need ESDF map
+        # ${CMAKE_SOURCE_DIR}/plugins/perception/grid_map_builder/include  # Uncomment if you need occupancy grid
+)
 
 # ========== 依赖项 ==========
+# Uncomment if you need additional dependencies:
+# find_package(Boost REQUIRED)              # For advanced data structures (heap, graph, etc.)
+# find_package(OpenCV REQUIRED)             # For image processing
+# find_package(PCL REQUIRED)                # For point cloud processing
+
 target_link_libraries({{PLUGIN_NAME_SNAKE}}_plugin
     PUBLIC
         navsim_plugin_framework
     PRIVATE
-        Eigen3::Eigen)
+        Eigen3::Eigen
+        # Boost::boost                        # Uncomment if using Boost
+        # ${OpenCV_LIBS}                      # Uncomment if using OpenCV
+        # ${PCL_LIBRARIES}                    # Uncomment if using PCL
+        # esdf_builder_plugin                 # Uncomment if you need ESDF map
+        # grid_map_builder_plugin             # Uncomment if you need occupancy grid
+)
 
 # ========== 编译选项 ==========
 target_compile_features({{PLUGIN_NAME_SNAKE}}_plugin PUBLIC cxx_std_17)

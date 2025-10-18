@@ -45,7 +45,8 @@ if(NOT Eigen3_FOUND)
 endif()
 
 # ========== Plugin Framework Library (without concrete plugins) ==========
-add_library(navsim_plugin_framework STATIC
+# 使用 SHARED 库以确保所有插件共享同一个注册表实例
+add_library(navsim_plugin_framework SHARED
     # Plugin framework
     platform/src/plugin/framework/perception_plugin_manager.cpp
     platform/src/plugin/framework/planner_plugin_manager.cpp

@@ -34,6 +34,7 @@
 #include "plugin/framework/plugin_init.hpp"
 #include "plugin/framework/planner_plugin_manager.hpp"
 #include "plugin/framework/perception_plugin_manager.hpp"
+#include "plugin/framework/plugin_registry.hpp"
 #include "plugin/data/planning_result.hpp"
 
 #include <iostream>
@@ -182,9 +183,18 @@ int main(int argc, char** argv) {
     std::cerr << "  Failed to load planner plugin: " << args.planner_name << std::endl;
     return 1;
   }
-  
-  std::cout << "  Successfully loaded " << plugin_loader.getLoadedPlugins().size() 
+
+  std::cout << "  Successfully loaded " << plugin_loader.getLoadedPlugins().size()
             << " plugins" << std::endl;
+
+  // 调试：检查注册表中的插件
+  std::cout << "  Checking plugin registry..." << std::endl;
+  auto& registry = plugin::PlannerPluginRegistry::getInstance();
+  std::cout << "  Registry has " << registry.getPluginCount() << " plugins" << std::endl;
+  auto plugin_names = registry.getPluginNames();
+  for (const auto& name : plugin_names) {
+    std::cout << "    - " << name << std::endl;
+  }
   
   // 3. 加载场景
   std::cout << "[3/5] Loading scenario from: " << args.scenario_file << std::endl;
@@ -206,8 +216,24 @@ int main(int argc, char** argv) {
   // 创建规划器管理器
   plugin::PlannerPluginManager planner_manager;
 
-  // 加载规划器
-  nlohmann::json planner_configs = nlohmann::json::object();  // 空配置，使用默认值
+  // 创建默认配置
+  nlohmann::json planner_configs;
+  planner_configs[args.planner_name] = {
+    {"safe_dis", 0.3},
+    {"max_jps_dis", 10.0},
+    {"distance_weight", 1.0},
+    {"yaw_weight", 1.0},
+    {"traj_cut_length", 5.0},
+    {"max_vel", 2.0},
+    {"max_acc", 2.0},
+    {"max_omega", 1.0},
+    {"max_domega", 1.0},
+    {"sample_time", 0.1},
+    {"min_traj_num", 10},
+    {"jps_truncation_time", 5.0},
+    {"verbose", args.verbose}
+  };
+
   if (!planner_manager.loadPlanners(args.planner_name, args.planner_name, false, planner_configs)) {
     std::cerr << "  Failed to load planner: " << args.planner_name << std::endl;
     return 1;

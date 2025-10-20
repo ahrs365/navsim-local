@@ -79,6 +79,12 @@ class JPSPlanner {
   const FlatTrajData& getFlatTraj() const { return flat_traj_; }
 
   /**
+   * @brief Get sampled trajectory (after getSampleTraj)
+   * @return const reference to sampled trajectory
+   */
+  const std::vector<Eigen::VectorXd>& getSampleTrajs() const { return Unoccupied_sample_trajs_; }
+
+  /**
    * @brief Get planning status
    * @return status code (-1 = failed, 0 = success)
    */

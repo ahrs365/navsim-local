@@ -45,6 +45,10 @@ bool JPSPlanner::plan(const Eigen::Vector3d& start, const Eigen::Vector3d& goal)
   start_state_ = start;
   end_state_ = goal;
 
+  // Initialize current state for trajectory generation
+  current_state_VAJ_ = Eigen::Vector3d(0.5, 0.0, 0.0);  // Initial velocity, acceleration, jerk
+  current_state_OAJ_ = Eigen::Vector3d(0.0, 0.0, 0.0);  // Initial angular velocity, acceleration, jerk
+
   Eigen::Vector2i start_idx = map_util_->coord2gridIndex(start.head(2));
   Eigen::Vector2i goal_idx = map_util_->coord2gridIndex(goal.head(2));
 
@@ -78,6 +82,11 @@ bool JPSPlanner::plan(const Eigen::Vector3d& start, const Eigen::Vector3d& goal)
   path_ = removeCornerPts(raw_path_);
   Unoccupied_path_ = path_;
 
+  // Generate trajectory with sampling and time parameterization
+  getSampleTraj();
+  getTrajsWithTime();
+
+  status_ = 0;
   return true;
 }
 
@@ -262,106 +271,111 @@ void JPSPlanner::getSampleTraj() {
 
 void JPSPlanner::getTrajsWithTime() {
   cut_Unoccupied_sample_trajs_.clear();
-  flat_traj_.UnOccupied_traj_pts.clear();
-  flat_traj_.UnOccupied_positions.clear();
 
-  double cur_t = 0;
-  double cur_s = 0;
-  double cur_v = current_state_VAJ_.x();
-  double cur_omega = current_state_OAJ_.x();
+  std::vector<double> Unoccupied_thetas;
+  std::vector<double> Unoccupied_pathlengths;
+  std::vector<double> Unoccupied_Weightpathlengths;
 
-  int traj_size = Unoccupied_sample_trajs_.size();
-  for (int i = 0; i < traj_size; i++) {
-    Eigen::VectorXd pt = Unoccupied_sample_trajs_[i];
-    double ds = pt[4];
-    double dtheta = pt[3];
+  double Unoccupied_AllWeightingPathLength_ = 0;
+  double Unoccupied_AllPathLength = 0;
 
-    double local_time_s, local_time_theta;
-    if (i == 0) {
-      local_time_s = 0;
-      local_time_theta = 0;
-    } else {
-      local_time_s = evaluateDuration(ds, cur_v, 0, config_.max_vel, config_.max_acc);
-      local_time_theta = evaluateDuration(std::abs(dtheta), cur_omega, 0, config_.max_omega, config_.max_domega);
-    }
+  bool if_cut = false;
+  Eigen::Vector3d cut_state = Unoccupied_sample_trajs_.back().head(3);
 
-    double local_time = std::max(local_time_s, local_time_theta);
-    cur_t += local_time;
-    cur_s += ds;
+  int PathNodeNum = Unoccupied_sample_trajs_.size();
+  cut_Unoccupied_sample_trajs_.push_back(Unoccupied_sample_trajs_[0]);
+  Unoccupied_thetas.push_back(Unoccupied_sample_trajs_[0][2]);
+  Unoccupied_pathlengths.push_back(0);
+  Unoccupied_Weightpathlengths.push_back(0);
 
-    if (cur_t > config_.traj_cut_length) {
-      if_first_point_cut_ = true;
-      double cut_time = config_.traj_cut_length;
-      double cut_s = evaluateLength(cut_time, cur_s - ds, local_time, cur_v, 0, config_.max_vel, config_.max_acc);
-      double cut_v = evaluateVel(cut_time, ds, local_time, cur_v, 0, config_.max_vel, config_.max_acc);
+  int pathnodeindex = 1;
+  for(; pathnodeindex < PathNodeNum && !if_cut; pathnodeindex++){
+    Eigen::VectorXd pathnode = Unoccupied_sample_trajs_[pathnodeindex];
+    if(Unoccupied_AllPathLength + fabs(pathnode[4]) >= config_.traj_cut_length && pathnode[4] != 0){
+      if_cut = true;
 
-      double cut_theta_time = evaluteTimeOfPos(cut_s - (cur_s - ds), ds, cur_v, 0, config_.max_vel, config_.max_acc);
-      double cut_theta = evaluateLength(cut_theta_time, 0, local_time, cur_omega, 0, config_.max_omega, config_.max_domega);
-      if (dtheta < 0) cut_theta = -cut_theta;
-      cut_theta += Unoccupied_sample_trajs_[i - 1][2];
+      Eigen::Vector3d former_state = Unoccupied_sample_trajs_[pathnodeindex-1].head(3);
+      cut_state = former_state + (pathnode.head(3) - former_state) * (config_.traj_cut_length - Unoccupied_AllPathLength) / fabs(pathnode[4]);
+      Eigen::VectorXd state5d;
+      state5d.resize(5);
+      state5d << cut_state.x(), cut_state.y(), cut_state.z(),
+                 (config_.traj_cut_length - Unoccupied_AllPathLength)/fabs(pathnode[4]) * pathnode[3],
+                 config_.traj_cut_length - Unoccupied_AllPathLength;
+      cut_Unoccupied_sample_trajs_.push_back(state5d);
+      Unoccupied_thetas.push_back(state5d[2]);
+      Unoccupied_AllPathLength += state5d[4];
+      Unoccupied_pathlengths.push_back(Unoccupied_AllPathLength);
+      Unoccupied_AllWeightingPathLength_ += config_.yaw_weight * abs(state5d[3]) + config_.distance_weight * abs(state5d[4]);
+      Unoccupied_Weightpathlengths.push_back(Unoccupied_AllWeightingPathLength_);
 
-      double cut_omega = evaluateVel(cut_theta_time, std::abs(dtheta), local_time, cur_omega, 0, config_.max_omega, config_.max_domega);
-      if (dtheta < 0) cut_omega = -cut_omega;
-
-      double cut_x = Unoccupied_sample_trajs_[i - 1][0] + cut_s * cos(cut_theta);
-      double cut_y = Unoccupied_sample_trajs_[i - 1][1] + cut_s * sin(cut_theta);
-
-      Eigen::VectorXd cut_state5d;
-      cut_state5d.resize(5);
-      cut_state5d << cut_x, cut_y, cut_theta, cut_theta - Unoccupied_sample_trajs_[i - 1][2], cut_s - (cur_s - ds);
-      cut_Unoccupied_sample_trajs_.push_back(cut_state5d);
-
-      Eigen::Vector3d cut_traj_pt;
-      cut_traj_pt << cut_theta, cut_s, cut_time;
-      flat_traj_.UnOccupied_traj_pts.push_back(cut_traj_pt);
-
-      Eigen::Vector3d cut_position;
-      cut_position << cut_x, cut_y, cut_theta;
-      flat_traj_.UnOccupied_positions.push_back(cut_position);
-
-      flat_traj_.start_state.resize(2, 3);
-      flat_traj_.start_state << start_state_.x(), cur_v * cos(start_state_.z()), 0,
-          start_state_.y(), cur_v * sin(start_state_.z()), 0;
-
-      flat_traj_.final_state.resize(2, 3);
-      flat_traj_.final_state << cut_x, cut_v * cos(cut_theta), 0, cut_y, cut_v * sin(cut_theta), 0;
-
-      flat_traj_.start_state_XYTheta = start_state_;
-      flat_traj_.final_state_XYTheta << cut_x, cut_y, cut_theta;
-      flat_traj_.if_cut = true;
-      flat_traj_.UnOccupied_initT = 0;
-
+      PathNodeNum = cut_Unoccupied_sample_trajs_.size();
       break;
-    } else {
-      Eigen::Vector3d traj_pt;
-      traj_pt << pt[2], cur_s, cur_t;
-      flat_traj_.UnOccupied_traj_pts.push_back(traj_pt);
+    }
+    cut_Unoccupied_sample_trajs_.push_back(pathnode);
+    Unoccupied_thetas.push_back(pathnode[2]);
+    Unoccupied_AllPathLength += fabs(pathnode[4]);
+    Unoccupied_pathlengths.push_back(Unoccupied_AllPathLength);
+    Unoccupied_AllWeightingPathLength_ += config_.yaw_weight * abs(pathnode[3]) + config_.distance_weight * abs(pathnode[4]);
+    Unoccupied_Weightpathlengths.push_back(Unoccupied_AllWeightingPathLength_);
+  }
 
-      Eigen::Vector3d position;
-      position << pt[0], pt[1], pt[2];
-      flat_traj_.UnOccupied_positions.push_back(position);
+  double totalTrajTime_ = evaluateDuration(Unoccupied_AllWeightingPathLength_, current_state_VAJ_.x(), 0.0, config_.max_vel, config_.max_acc);
+  std::vector<Eigen::Vector3d> Unoccupied_traj_pts; // Store the sampled coordinates yaw, s, t
+  std::vector<Eigen::Vector3d> Unoccupied_positions; // Store the sampled coordinates x, y, yaw
 
-      if (i == traj_size - 1) {
-        flat_traj_.start_state.resize(2, 3);
-        flat_traj_.start_state << start_state_.x(), cur_v * cos(start_state_.z()), 0,
-            start_state_.y(), cur_v * sin(start_state_.z()), 0;
+  double Unoccupied_totalTrajTime_ = totalTrajTime_;
+  double Unoccupied_sampletime;
+  int Unoccupied_PathNodeIndex = 1;
 
-        flat_traj_.final_state.resize(2, 3);
-        flat_traj_.final_state << end_state_.x(), 0, 0, end_state_.y(), 0, 0;
+  Unoccupied_sampletime = Unoccupied_totalTrajTime_ / std::max(int(Unoccupied_totalTrajTime_ / config_.sample_time + 0.5), config_.min_traj_num);
 
-        flat_traj_.start_state_XYTheta = start_state_;
-        flat_traj_.final_state_XYTheta = end_state_;
-        flat_traj_.if_cut = false;
-        flat_traj_.UnOccupied_initT = 0;
+  PathNodeNum = cut_Unoccupied_sample_trajs_.size();
+  double tmparc = 0;
+
+  for(double samplet = Unoccupied_sampletime; samplet < Unoccupied_totalTrajTime_ - 1e-3; samplet += Unoccupied_sampletime){
+    double arc = evaluateLength(samplet, Unoccupied_AllWeightingPathLength_, Unoccupied_totalTrajTime_, current_state_VAJ_.x(), 0.0, config_.max_vel, config_.max_acc);
+    for (int k = Unoccupied_PathNodeIndex; k < PathNodeNum; k++){
+      Eigen::VectorXd pathnode = cut_Unoccupied_sample_trajs_[k];
+      Eigen::VectorXd prepathnode = cut_Unoccupied_sample_trajs_[k-1];
+      tmparc = Unoccupied_Weightpathlengths[k];
+      if(tmparc >= arc){
+        Unoccupied_PathNodeIndex = k;
+        double l1 = tmparc-arc;
+        double l = Unoccupied_Weightpathlengths[k]-Unoccupied_Weightpathlengths[k-1];
+        double interp_s = Unoccupied_pathlengths[k-1] + (l-l1)/l*(pathnode[4]);
+        double interp_yaw = cut_Unoccupied_sample_trajs_[k-1][2] + (l-l1)/l*(pathnode[3]);
+        Unoccupied_traj_pts.emplace_back(interp_yaw, interp_s, samplet);
+
+        double interp_x = l1/l*prepathnode[0] + (l-l1)/l*(pathnode[0]);
+        double interp_y = l1/l*prepathnode[1] + (l-l1)/l*(pathnode[1]);
+        Unoccupied_positions.emplace_back(interp_x, interp_y, interp_yaw);
+        break;
       }
     }
-
-    if (i % 2 == 0) {
-      cur_v = evaluateVel(local_time, ds, local_time, cur_v, 0, config_.max_vel, config_.max_acc);
-    } else {
-      cur_omega = evaluateVel(local_time, std::abs(dtheta), local_time, cur_omega, 0, config_.max_omega, config_.max_domega);
-    }
   }
+
+  Eigen::MatrixXd startS;
+  Eigen::MatrixXd endS;
+  startS.resize(2,3);
+  endS.resize(2,3);
+  Eigen::Vector2d startP(cut_Unoccupied_sample_trajs_[0][2],0);
+  Eigen::Vector2d finalP(cut_Unoccupied_sample_trajs_[PathNodeNum-1][2],Unoccupied_pathlengths[PathNodeNum-1]);
+  startS.col(0) = startP;
+  startS.block(0,1,1,2) = current_state_OAJ_.transpose().head(2);
+  startS.block(1,1,1,2) = current_state_VAJ_.transpose().head(2);
+  endS.col(0) = finalP;
+  endS.col(1).setZero();
+  endS.col(2).setZero();
+
+  flat_traj_.UnOccupied_traj_pts = Unoccupied_traj_pts;
+  flat_traj_.UnOccupied_initT = Unoccupied_sampletime;
+  flat_traj_.UnOccupied_positions = Unoccupied_positions;
+
+  flat_traj_.start_state = startS;
+  flat_traj_.final_state = endS;
+  flat_traj_.start_state_XYTheta = start_state_;
+  flat_traj_.if_cut = if_cut;
+  flat_traj_.final_state_XYTheta = cut_state;
 }
 
 // ============================================================================
@@ -513,4 +527,5 @@ double JPSPlanner::evaluteTimeOfPos(const double& pos, const double& locallength
 bool JPSPlanner::JPS_check_if_collision(const Eigen::Vector2d& pos) {
   return map_util_->getDistanceReal(pos) < config_.safe_dis;
 }
+
 

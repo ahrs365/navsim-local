@@ -430,6 +430,24 @@ int main(int argc, char** argv) {
 
       // 可视化轨迹
       g_visualizer->drawTrajectory(result.trajectory, result.planner_name);
+
+      // 可视化调试路径（JPS的多个阶段）
+      if (result.planner_name == "JPSPlanner" && result.metadata.count("has_debug_paths") > 0 &&
+          result.metadata.count("debug_paths_ptr") > 0) {
+        // Get debug paths from the pointer stored in metadata
+        auto* debug_paths_ptr = reinterpret_cast<std::vector<std::vector<planning::Pose2d>>*>(
+            static_cast<uintptr_t>(result.metadata.at("debug_paths_ptr")));
+
+        if (debug_paths_ptr && !debug_paths_ptr->empty()) {
+          std::cout << "[Debug] Drawing " << debug_paths_ptr->size() << " debug paths for JPS visualization" << std::endl;
+          std::vector<std::string> path_names{"Raw JPS Path", "Optimized Path", "Sample Trajectory"};
+          std::vector<std::string> colors{"red", "green", "blue"};
+          g_visualizer->drawDebugPaths(*debug_paths_ptr, path_names, colors);
+        } else {
+          std::cout << "[Debug] No debug paths available for JPS visualization" << std::endl;
+        }
+      }
+
       g_visualizer->updatePlanningResult(result);
     } else {
       g_visualizer->showDebugInfo("Status", "Planning Failed");
@@ -511,6 +529,24 @@ int main(int argc, char** argv) {
           // 更新成功状态和结果
           success = replan_success;
           result = new_result;
+
+          // 重新绘制轨迹（包括调试路径）
+          g_visualizer->drawTrajectory(result.trajectory, result.planner_name);
+
+          // 可视化调试路径（JPS的多个阶段）
+          if (result.planner_name == "JPSPlanner" && result.metadata.count("has_debug_paths") > 0 &&
+              result.metadata.count("debug_paths_ptr") > 0) {
+            // Get debug paths from the pointer stored in metadata
+            auto* debug_paths_ptr = reinterpret_cast<std::vector<std::vector<planning::Pose2d>>*>(
+                static_cast<uintptr_t>(result.metadata.at("debug_paths_ptr")));
+
+            if (debug_paths_ptr && !debug_paths_ptr->empty()) {
+              std::cout << "[Replanning] Drawing " << debug_paths_ptr->size() << " debug paths for JPS visualization" << std::endl;
+              std::vector<std::string> path_names{"Raw JPS Path", "Optimized Path", "Sample Trajectory"};
+              std::vector<std::string> colors{"red", "green", "blue"};
+              g_visualizer->drawDebugPaths(*debug_paths_ptr, path_names, colors);
+            }
+          }
 
           // 更新可视化
           g_visualizer->updatePlanningResult(result);

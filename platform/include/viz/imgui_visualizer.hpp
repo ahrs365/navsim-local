@@ -54,6 +54,9 @@ public:
   void drawESDFMap(const planning::ESDFMap& esdf_map);
   void drawTrajectory(const std::vector<plugin::TrajectoryPoint>& trajectory,
                       const std::string& planner_name = "") override;
+  void drawDebugPaths(const std::vector<std::vector<planning::Pose2d>>& paths,
+                      const std::vector<std::string>& path_names,
+                      const std::vector<std::string>& colors) override;
   void updatePlanningContext(const planning::PlanningContext& context) override;
   void updatePlanningResult(const plugin::PlanningResult& result) override;
   void showDebugInfo(const std::string& key, const std::string& value) override;
@@ -87,6 +90,11 @@ private:
   std::vector<plugin::TrajectoryPoint> trajectory_;
   std::string planner_name_;
   std::map<std::string, std::string> debug_info_;
+
+  // Debug paths for multi-stage visualization
+  std::vector<std::vector<planning::Pose2d>> debug_paths_;
+  std::vector<std::string> debug_path_names_;
+  std::vector<std::string> debug_path_colors_;
   std::map<std::string, std::string> context_info_;
   std::map<std::string, std::string> result_info_;
   
@@ -109,6 +117,12 @@ private:
     bool show_esdf_map = true;         // 显示 ESDF 地图
     bool show_coordinate_axes = true;  // 显示坐标轴
     bool show_grid_lines = true;       // 显示网格线
+
+    // Debug paths for JPS planner
+    bool show_debug_paths = true;      // 总开关：显示JPS调试路径
+    bool show_raw_jps_path = true;     // 显示原始JPS搜索路径（红色）
+    bool show_optimized_path = true;   // 显示优化路径（绿色）
+    bool show_sample_trajectory = true;// 显示采样轨迹（蓝色）
   } viz_options_;
 
   // 系统信息

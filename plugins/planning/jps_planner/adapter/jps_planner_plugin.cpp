@@ -56,7 +56,6 @@ bool JpsPlannerPlugin::initialize(const json& config) {
   initialized_ = true;
 
   if (verbose_) {
-    std::cout << "[JPSPlannerPlugin] Initialized successfully!" << std::endl;
     std::cout << "  - Safe distance: " << jps_config_.safe_dis << " m" << std::endl;
     std::cout << "  - Max velocity: " << jps_config_.max_vel << " m/s" << std::endl;
     std::cout << "  - Max acceleration: " << jps_config_.max_acc << " m/s^2" << std::endl;
@@ -170,8 +169,56 @@ bool JpsPlannerPlugin::plan(const navsim::planning::PlanningContext& context,
 
   if (verbose_) {
     std::cout << "[JPSPlannerPlugin] jps_planner_->plan() returned: " << success << std::endl;
-    std::cout << "[JPSPlannerPlugin] Raw path size: " << jps_planner_->getRawPath().size() << std::endl;
-    std::cout << "[JPSPlannerPlugin] Optimized path size: " << jps_planner_->getOptimizedPath().size() << std::endl;
+
+    // Debug Path 1: Raw JPS path
+    const auto& raw_path = jps_planner_->getRawPath();
+    std::cout << "[JPSPlannerPlugin] === PATH 1: Raw JPS path size: " << raw_path.size() << std::endl;
+    if (!raw_path.empty()) {
+      std::cout << "  First point: " << raw_path[0].transpose() << std::endl;
+      std::cout << "  Last point: " << raw_path.back().transpose() << std::endl;
+      for (size_t i = 0; i < std::min(raw_path.size(), size_t(5)); ++i) {
+        std::cout << "  [" << i << "]: " << raw_path[i].transpose() << std::endl;
+      }
+    }
+
+    // Debug Path 2: Optimized path (after removeCornerPts)
+    const auto& opt_path = jps_planner_->getOptimizedPath();
+    std::cout << "[JPSPlannerPlugin] === PATH 2: Optimized path size: " << opt_path.size() << std::endl;
+    if (!opt_path.empty()) {
+      std::cout << "  First point: " << opt_path[0].transpose() << std::endl;
+      std::cout << "  Last point: " << opt_path.back().transpose() << std::endl;
+      for (size_t i = 0; i < std::min(opt_path.size(), size_t(5)); ++i) {
+        std::cout << "  [" << i << "]: " << opt_path[i].transpose() << std::endl;
+      }
+    }
+
+    // Debug Path 3: Sampled trajectory (after getSampleTraj)
+    const auto& sample_trajs = jps_planner_->getSampleTrajs();
+    std::cout << "[JPSPlannerPlugin] === PATH 3: Sample trajectory size: " << sample_trajs.size() << std::endl;
+    if (!sample_trajs.empty()) {
+      std::cout << "  First sample: [x,y,yaw,dyaw,ds] = " << sample_trajs[0].transpose() << std::endl;
+      std::cout << "  Last sample: [x,y,yaw,dyaw,ds] = " << sample_trajs.back().transpose() << std::endl;
+      for (size_t i = 0; i < std::min(sample_trajs.size(), size_t(5)); ++i) {
+        std::cout << "  [" << i << "]: " << sample_trajs[i].transpose() << std::endl;
+      }
+    }
+
+    // Debug Path 4: Final FlatTrajData (after getTrajsWithTime)
+    const auto& flat_traj = jps_planner_->getFlatTraj();
+    std::cout << "[JPSPlannerPlugin] === PATH 4: FlatTrajData size: " << flat_traj.UnOccupied_traj_pts.size() << std::endl;
+    std::cout << "  Sample time: " << flat_traj.UnOccupied_initT << std::endl;
+    std::cout << "  If cut: " << flat_traj.if_cut << std::endl;
+    if (!flat_traj.UnOccupied_traj_pts.empty()) {
+      std::cout << "  First traj point [yaw,s,t]: " << flat_traj.UnOccupied_traj_pts[0].transpose() << std::endl;
+      std::cout << "  Last traj point [yaw,s,t]: " << flat_traj.UnOccupied_traj_pts.back().transpose() << std::endl;
+    }
+    if (!flat_traj.UnOccupied_positions.empty()) {
+      std::cout << "  First position [x,y,yaw]: " << flat_traj.UnOccupied_positions[0].transpose() << std::endl;
+      std::cout << "  Last position [x,y,yaw]: " << flat_traj.UnOccupied_positions.back().transpose() << std::endl;
+      for (size_t i = 0; i < std::min(flat_traj.UnOccupied_positions.size(), size_t(5)); ++i) {
+        std::cout << "  [" << i << "]: " << flat_traj.UnOccupied_positions[i].transpose() << std::endl;
+      }
+    }
   }
 
   if (!success) {
@@ -207,6 +254,55 @@ bool JpsPlannerPlugin::plan(const navsim::planning::PlanningContext& context,
               << result.trajectory.size() << " points, time: " << planning_time_ms << " ms" << std::endl;
   }
 
+  // Store debug paths in result for visualization
+  result.metadata["has_debug_paths"] = 1.0;
+
+  // Store debug paths using a global variable (temporary solution)
+  // TODO: Improve this by using proper data structure in PlanningResult
+  static std::vector<std::vector<navsim::planning::Pose2d>> global_debug_paths;
+  global_debug_paths.clear();
+
+  // Collect Raw JPS path
+  const auto& raw_path = jps_planner_->getRawPath();
+  std::vector<navsim::planning::Pose2d> raw_poses;
+  for (const auto& pt : raw_path) {
+    navsim::planning::Pose2d pose;
+    pose.x = pt.x();
+    pose.y = pt.y();
+    pose.yaw = 0.0;
+    raw_poses.push_back(pose);
+  }
+  global_debug_paths.push_back(raw_poses);
+
+  // Collect Optimized path
+  const auto& opt_path = jps_planner_->getOptimizedPath();
+  std::vector<navsim::planning::Pose2d> opt_poses;
+  for (const auto& pt : opt_path) {
+    navsim::planning::Pose2d pose;
+    pose.x = pt.x();
+    pose.y = pt.y();
+    pose.yaw = 0.0;
+    opt_poses.push_back(pose);
+  }
+  global_debug_paths.push_back(opt_poses);
+
+  // Collect Sample trajectory
+  const auto& sample_trajs = jps_planner_->getSampleTrajs();
+  std::vector<navsim::planning::Pose2d> sample_poses;
+  for (const auto& traj : sample_trajs) {
+    if (traj.size() >= 3) {
+      navsim::planning::Pose2d pose;
+      pose.x = traj[0];
+      pose.y = traj[1];
+      pose.yaw = traj[2];
+      sample_poses.push_back(pose);
+    }
+  }
+  global_debug_paths.push_back(sample_poses);
+
+  // Store a way for the main app to access this data
+  result.metadata["debug_paths_ptr"] = static_cast<double>(reinterpret_cast<uintptr_t>(&global_debug_paths));
+
   return true;
 }
 
@@ -216,12 +312,13 @@ bool JpsPlannerPlugin::plan(const navsim::planning::PlanningContext& context,
 
 bool JpsPlannerPlugin::loadConfig(const json& config) {
   try {
+
     // Load JPS configuration (config is the planner-specific config from default.json)
     jps_config_.safe_dis = config.value("safe_dis", 0.3);
     jps_config_.max_jps_dis = config.value("max_jps_dis", 10.0);
     jps_config_.distance_weight = config.value("distance_weight", 1.0);
     jps_config_.yaw_weight = config.value("yaw_weight", 1.0);
-    jps_config_.traj_cut_length = config.value("traj_cut_length", 5.0);
+    jps_config_.traj_cut_length = std::max(config.value("traj_cut_length", 50.0), 25.0);  // Force minimum 25m to reach goal
     jps_config_.max_vel = config.value("max_vel", 1.0);
     jps_config_.max_acc = config.value("max_acc", 1.0);
     jps_config_.max_omega = config.value("max_omega", 1.0);
@@ -231,7 +328,7 @@ bool JpsPlannerPlugin::loadConfig(const json& config) {
     jps_config_.jps_truncation_time = config.value("jps_truncation_time", 5.0);
 
     // Load plugin configuration
-    verbose_ = config.value("verbose", false);
+    verbose_ = true;  // Force enable for testing debug paths
 
     return true;
   } catch (const std::exception& e) {
@@ -294,58 +391,109 @@ bool JpsPlannerPlugin::convertJPSOutputToResult(const JPS::JPSPlanner& jps_plann
     return false;
   }
 
+  // Get flat trajectory data
+  const auto& flat_traj = jps_planner.getFlatTraj();
+
   // Convert to PlanningResult format (trajectory points)
   result.trajectory.clear();
-  result.trajectory.reserve(path.size());
+
+  // Use flat trajectory data if available and non-empty
+  if (!flat_traj.UnOccupied_positions.empty()) {
+    result.trajectory.reserve(flat_traj.UnOccupied_positions.size());
+
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] Using FlatTrajData with "
+                << flat_traj.UnOccupied_positions.size() << " points" << std::endl;
+    }
+  } else {
+    result.trajectory.reserve(path.size());
+
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] Using optimized path with "
+                << path.size() << " points" << std::endl;
+    }
+  }
 
   double cumulative_time = 0.0;
   double cumulative_length = 0.0;
 
-  for (size_t i = 0; i < path.size(); ++i) {
-    navsim::plugin::TrajectoryPoint traj_pt;
+  // Use FlatTrajData if available, otherwise fall back to path
+  if (!flat_traj.UnOccupied_positions.empty()) {
+    // Use time-parameterized trajectory from FlatTrajData
+    for (size_t i = 0; i < flat_traj.UnOccupied_positions.size(); ++i) {
+      navsim::plugin::TrajectoryPoint traj_pt;
 
-    // Set pose
-    traj_pt.pose.x = path[i].x();
-    traj_pt.pose.y = path[i].y();
+      // Set pose from FlatTrajData positions (x, y, yaw)
+      const auto& position = flat_traj.UnOccupied_positions[i];
+      traj_pt.pose.x = position.x();    // x coordinate
+      traj_pt.pose.y = position.y();    // y coordinate
+      traj_pt.pose.yaw = position.z();  // yaw angle
 
-    // ✅ Calculate yaw from path direction
-    if (i + 1 < path.size()) {
-      // Use direction to next point
-      double dx = path[i + 1].x() - path[i].x();
-      double dy = path[i + 1].y() - path[i].y();
-      traj_pt.pose.yaw = std::atan2(dy, dx);
-    } else if (i > 0) {
-      // Last point: use direction from previous point
-      double dx = path[i].x() - path[i - 1].x();
-      double dy = path[i].y() - path[i - 1].y();
-      traj_pt.pose.yaw = std::atan2(dy, dx);
-    } else {
-      // Single point: use goal yaw (fallback)
-      traj_pt.pose.yaw = 0.0;
+      // Set velocity (constant velocity for now, can be improved with velocity profile)
+      traj_pt.twist.vx = jps_config_.max_vel;
+      traj_pt.twist.vy = 0.0;
+      traj_pt.twist.omega = 0.0;
+
+      // Time from FlatTrajData sampling
+      traj_pt.time_from_start = i * flat_traj.UnOccupied_initT;
+
+      // Calculate path length
+      if (i > 0) {
+        const auto& prev_position = flat_traj.UnOccupied_positions[i-1];
+        double dx = position.x() - prev_position.x();
+        double dy = position.y() - prev_position.y();
+        double segment_length = std::sqrt(dx*dx + dy*dy);
+        cumulative_length += segment_length;
+      }
+      traj_pt.path_length = cumulative_length;
+
+      result.trajectory.push_back(traj_pt);
     }
+  } else {
+    // Fallback to optimized path
+    for (size_t i = 0; i < path.size(); ++i) {
+      navsim::plugin::TrajectoryPoint traj_pt;
 
-    // Set velocity (constant velocity for now)
-    traj_pt.twist.vx = jps_config_.max_vel;
-    traj_pt.twist.vy = 0.0;
-    traj_pt.twist.omega = 0.0;
+      // Set pose
+      traj_pt.pose.x = path[i].x();
+      traj_pt.pose.y = path[i].y();
 
-    // Calculate path length
-    if (i > 0) {
-      double dx = path[i].x() - path[i-1].x();
-      double dy = path[i].y() - path[i-1].y();
-      double segment_length = std::sqrt(dx*dx + dy*dy);
-      cumulative_length += segment_length;
-      cumulative_time += segment_length / jps_config_.max_vel;
+      // Calculate yaw from path direction
+      if (i + 1 < path.size()) {
+        // Use direction to next point
+        double dx = path[i + 1].x() - path[i].x();
+        double dy = path[i + 1].y() - path[i].y();
+        traj_pt.pose.yaw = std::atan2(dy, dx);
+      } else if (i > 0) {
+        // Last point: use direction from previous point
+        double dx = path[i].x() - path[i - 1].x();
+        double dy = path[i].y() - path[i - 1].y();
+        traj_pt.pose.yaw = std::atan2(dy, dx);
+      } else {
+        // Single point: use goal yaw (fallback)
+        traj_pt.pose.yaw = 0.0;
+      }
+
+      // Set velocity (constant velocity for now)
+      traj_pt.twist.vx = jps_config_.max_vel;
+      traj_pt.twist.vy = 0.0;
+      traj_pt.twist.omega = 0.0;
+
+      // Calculate path length
+      if (i > 0) {
+        double dx = path[i].x() - path[i-1].x();
+        double dy = path[i].y() - path[i-1].y();
+        double segment_length = std::sqrt(dx*dx + dy*dy);
+        cumulative_length += segment_length;
+        cumulative_time += segment_length / jps_config_.max_vel;
+      }
+
+      traj_pt.time_from_start = cumulative_time;
+      traj_pt.path_length = cumulative_length;
+
+      result.trajectory.push_back(traj_pt);
     }
-
-    traj_pt.time_from_start = cumulative_time;
-    traj_pt.path_length = cumulative_length;
-
-    result.trajectory.push_back(traj_pt);
   }
-
-  // Get flat trajectory data (optional, for advanced use)
-  const auto& flat_traj = jps_planner.getFlatTraj();
 
   // Store trajectory data in result metadata (if needed)
   // This can be used by downstream modules for trajectory tracking

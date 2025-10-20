@@ -88,6 +88,13 @@ public:
                                const std::string& planner_name = "") = 0;
 
   /**
+   * @brief 绘制调试路径（用于显示多个路径阶段）
+   */
+  virtual void drawDebugPaths(const std::vector<std::vector<planning::Pose2d>>& paths,
+                              const std::vector<std::string>& path_names,
+                              const std::vector<std::string>& colors) = 0;
+
+  /**
    * @brief 更新规划上下文信息
    */
   virtual void updatePlanningContext(const planning::PlanningContext& context) = 0;
@@ -148,6 +155,8 @@ public:
   void drawDynamicObstacles(const std::vector<planning::DynamicObstacle>&) override {}
   void drawOccupancyGrid(const planning::OccupancyGrid&) override {}
   void drawTrajectory(const std::vector<plugin::TrajectoryPoint>&, const std::string&) override {}
+  void drawDebugPaths(const std::vector<std::vector<planning::Pose2d>>&,
+                      const std::vector<std::string>&, const std::vector<std::string>&) override {}
   void updatePlanningContext(const planning::PlanningContext&) override {}
   void updatePlanningResult(const plugin::PlanningResult&) override {}
   void showDebugInfo(const std::string&, const std::string&) override {}

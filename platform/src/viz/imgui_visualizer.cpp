@@ -295,6 +295,23 @@ void ImGuiVisualizer::drawTrajectory(const std::vector<plugin::TrajectoryPoint>&
   debug_info_["Planner"] = planner_name;
 }
 
+void ImGuiVisualizer::drawDebugPaths(const std::vector<std::vector<planning::Pose2d>>& paths,
+                                      const std::vector<std::string>& path_names,
+                                      const std::vector<std::string>& colors) {
+  debug_paths_ = paths;
+  debug_path_names_ = path_names;
+  debug_path_colors_ = colors;
+
+  static int call_count = 0;
+  if (call_count++ % 60 == 0) {
+    std::cout << "[Viz] drawDebugPaths called with " << paths.size() << " paths" << std::endl;
+    for (size_t i = 0; i < paths.size(); ++i) {
+      std::cout << "[Viz]   Path " << i << " (" << (i < path_names.size() ? path_names[i] : "Unknown")
+                << "): " << paths[i].size() << " points" << std::endl;
+    }
+  }
+}
+
 void ImGuiVisualizer::updatePlanningContext(const planning::PlanningContext& context) {
   context_info_.clear();
   context_info_["Timestamp"] = formatDouble(context.timestamp, 3) + " s";
@@ -1063,6 +1080,51 @@ void ImGuiVisualizer::renderScene() {
   }
   }  // 🎨 结束动态障碍物绘制
 
+  // 🎨 4.5 绘制调试路径（多阶段显示）
+  if (!debug_paths_.empty() && viz_options_.show_debug_paths) {
+    static int debug_log_count = 0;
+    if (debug_log_count++ % 60 == 0) {
+      std::cout << "[Viz]   Drawing " << debug_paths_.size() << " debug paths" << std::endl;
+    }
+
+    // 定义颜色映射和开关状态
+    std::vector<ImU32> path_colors = {
+      IM_COL32(255, 100, 100, 255),  // 红色 - Raw JPS path
+      IM_COL32(100, 255, 100, 255),  // 绿色 - Optimized path
+      IM_COL32(100, 100, 255, 255),  // 蓝色 - Sample trajectory
+    };
+
+    std::vector<bool> path_enabled = {
+      viz_options_.show_raw_jps_path,
+      viz_options_.show_optimized_path,
+      viz_options_.show_sample_trajectory
+    };
+
+    for (size_t path_idx = 0; path_idx < debug_paths_.size(); ++path_idx) {
+      // Check if this path should be displayed
+      if (path_idx < path_enabled.size() && !path_enabled[path_idx]) {
+        continue;  // Skip this path if its checkbox is unchecked
+      }
+
+      const auto& path = debug_paths_[path_idx];
+      if (path.size() < 2) continue;
+
+      ImU32 color = path_idx < path_colors.size() ? path_colors[path_idx] : IM_COL32(255, 255, 255, 255);
+      float line_width = 2.0f + path_idx * 0.5f;  // Different line widths
+
+      for (size_t i = 1; i < path.size(); ++i) {
+        auto p1 = worldToScreen(path[i-1].x, path[i-1].y);
+        auto p2 = worldToScreen(path[i].x, path[i].y);
+        draw_list->AddLine(
+          ImVec2(p1.x, p1.y),
+          ImVec2(p2.x, p2.y),
+          color,
+          line_width
+        );
+      }
+    }
+  }
+
   // 🎨 5. 绘制规划轨迹（可选）
   if (viz_options_.show_trajectory) {
     static int traj_log_count = 0;
@@ -1560,6 +1622,27 @@ void ImGuiVisualizer::renderLegendPanel() {
   ImGui::SameLine();
   ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "[Cyan]");
 
+  // Debug paths for JPS planner
+  ImGui::Checkbox("Show Debug Paths", &viz_options_.show_debug_paths);
+  ImGui::SameLine();
+  ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "[JPS Planner]");
+
+  ImGui::Indent();
+  if (viz_options_.show_debug_paths) {
+    ImGui::Checkbox("Raw JPS Path", &viz_options_.show_raw_jps_path);
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "[Red - Original Search]");
+
+    ImGui::Checkbox("Optimized Path", &viz_options_.show_optimized_path);
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[Green - After Corner Removal]");
+
+    ImGui::Checkbox("Sample Trajectory", &viz_options_.show_sample_trajectory);
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.4f, 0.4f, 1.0f, 1.0f), "[Blue - Sampled Path]");
+  }
+  ImGui::Unindent();
+
   ImGui::Checkbox("Show BEV Obstacles", &viz_options_.show_bev_obstacles);
   ImGui::Indent();
   if (viz_options_.show_bev_obstacles) {
@@ -1664,6 +1747,10 @@ void ImGuiVisualizer::renderLegendPanel() {
     viz_options_.show_ego = true;
     viz_options_.show_goal = true;
     viz_options_.show_trajectory = true;
+    viz_options_.show_debug_paths = true;
+    viz_options_.show_raw_jps_path = true;
+    viz_options_.show_optimized_path = true;
+    viz_options_.show_sample_trajectory = true;
     viz_options_.show_bev_obstacles = true;
     viz_options_.show_dynamic_obstacles = true;
     viz_options_.show_occupancy_grid = true;
@@ -1675,6 +1762,10 @@ void ImGuiVisualizer::renderLegendPanel() {
     viz_options_.show_ego = false;
     viz_options_.show_goal = false;
     viz_options_.show_trajectory = false;
+    viz_options_.show_debug_paths = false;
+    viz_options_.show_raw_jps_path = false;
+    viz_options_.show_optimized_path = false;
+    viz_options_.show_sample_trajectory = false;
     viz_options_.show_bev_obstacles = false;
     viz_options_.show_dynamic_obstacles = false;
     viz_options_.show_occupancy_grid = false;

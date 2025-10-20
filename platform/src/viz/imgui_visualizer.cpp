@@ -209,6 +209,8 @@ void ImGuiVisualizer::handleEvents() {
           break;
       }
     }
+
+    // 鼠标点击事件将在renderScene中处理，以便获取正确的画布坐标
   }
 }
 
@@ -866,25 +868,50 @@ void ImGuiVisualizer::renderScene() {
     float w = rect.width * config_.pixels_per_meter * view_state_.zoom;
     float h = rect.height * config_.pixels_per_meter * view_state_.zoom;
 
-    // 简化：绘制为圆形（完整的旋转矩形需要更复杂的计算）
-    float radius = std::sqrt(w * w + h * h) / 2.0f;
-
     if (obstacle_log_count % 60 == 0) {
       auto screen_pos = worldToScreen(rect.pose.x, rect.pose.y);
       std::cout << "[Viz]       Rect screen pos=(" << screen_pos.x << ", " << screen_pos.y
-                << "), radius=" << radius << std::endl;
+                << "), size=(" << w << " x " << h << "), yaw=" << rect.pose.yaw << std::endl;
     }
 
-    draw_list->AddCircleFilled(
-      ImVec2(center.x, center.y),
-      radius,
-      IM_COL32(100, 255, 100, 200)  // 🔧 改为绿色，更容易区分
+    // 正确绘制带旋转的矩形
+    float cos_yaw = std::cos(rect.pose.yaw);
+    float sin_yaw = std::sin(rect.pose.yaw);
+
+    // 计算矩形四个顶点相对于中心的偏移
+    float half_w = w / 2.0f;
+    float half_h = h / 2.0f;
+
+    // 未旋转的四个顶点（相对于中心）
+    std::vector<ImVec2> corners = {
+      ImVec2(-half_w, -half_h),  // 左下
+      ImVec2( half_w, -half_h),  // 右下
+      ImVec2( half_w,  half_h),  // 右上
+      ImVec2(-half_w,  half_h)   // 左上
+    };
+
+    // 应用旋转和平移
+    for (auto& corner : corners) {
+      float x = corner.x * cos_yaw - corner.y * sin_yaw;
+      float y = corner.x * sin_yaw + corner.y * cos_yaw;
+      corner.x = center.x + x;
+      corner.y = center.y + y;
+    }
+
+    // 绘制填充矩形
+    draw_list->AddConvexPolyFilled(
+      corners.data(),
+      corners.size(),
+      IM_COL32(100, 255, 100, 200)  // 绿色填充
     );
-    draw_list->AddCircle(
-      ImVec2(center.x, center.y),
-      radius,
+
+    // 绘制矩形边框
+    draw_list->AddPolyline(
+      corners.data(),
+      corners.size(),
       IM_COL32(0, 255, 0, 255),  // 绿色边框
-      0, 2.0f
+      ImDrawFlags_Closed,
+      2.0f
     );
   }
 
@@ -1311,6 +1338,37 @@ void ImGuiVisualizer::renderScene() {
     }
   }  // 🎨 结束自车绘制
 
+  // 处理目标点设置的鼠标点击事件
+  if (goal_setting_mode_) {
+    // 检查鼠标是否在画布区域内
+    ImVec2 mouse_pos = ImGui::GetMousePos();
+    if (mouse_pos.x >= canvas_pos.x && mouse_pos.x <= canvas_pos.x + canvas_size.x &&
+        mouse_pos.y >= canvas_pos.y && mouse_pos.y <= canvas_pos.y + canvas_size.y) {
+
+      // 检查鼠标左键是否被点击
+      if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        // 计算相对于画布中心的坐标
+        float rel_x = mouse_pos.x - (canvas_pos.x + canvas_size.x / 2.0f);
+        float rel_y = (canvas_pos.y + canvas_size.y / 2.0f) - mouse_pos.y;  // Y轴翻转
+
+        // 转换为世界坐标
+        double world_x = view_state_.center_x + rel_x / (config_.pixels_per_meter * view_state_.zoom);
+        double world_y = view_state_.center_y + rel_y / (config_.pixels_per_meter * view_state_.zoom);
+
+        // 设置新的目标点
+        new_goal_.x = world_x;
+        new_goal_.y = world_y;
+        new_goal_.yaw = 0.0;  // 默认朝向
+        has_new_goal_ = true;
+
+        // 退出目标点设置模式
+        setGoalSettingMode(false);
+
+        std::cout << "[ImGuiVisualizer] New goal set at: (" << world_x << ", " << world_y << ")" << std::endl;
+      }
+    }
+  }
+
   ImGui::End();
 }
 
@@ -1627,6 +1685,23 @@ void ImGuiVisualizer::renderLegendPanel() {
   ImGui::Spacing();
   ImGui::Separator();
 
+  // 目标点设置按钮
+  ImGui::Text("Goal Setting:");
+  if (goal_setting_mode_) {
+    if (ImGui::Button("Cancel Goal Setting")) {
+      setGoalSettingMode(false);
+    }
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Click on scene to set goal");
+  } else {
+    if (ImGui::Button("Set New Goal")) {
+      setGoalSettingMode(true);
+    }
+  }
+
+  ImGui::Spacing();
+  ImGui::Separator();
+
   // 统计信息
   ImGui::Text("Statistics:");
   ImGui::BulletText("BEV Circles: %zu", bev_obstacles_.circles.size());
@@ -1636,6 +1711,24 @@ void ImGuiVisualizer::renderLegendPanel() {
   ImGui::BulletText("Trajectory Points: %zu", trajectory_.size());
 
   ImGui::End();
+}
+
+bool ImGuiVisualizer::hasNewGoal(planning::Pose2d& new_goal) {
+  if (has_new_goal_) {
+    new_goal = new_goal_;
+    has_new_goal_ = false;  // 重置标志
+    return true;
+  }
+  return false;
+}
+
+void ImGuiVisualizer::setGoalSettingMode(bool enable) {
+  goal_setting_mode_ = enable;
+  if (enable) {
+    std::cout << "[ImGuiVisualizer] Goal setting mode enabled. Click on the scene to set new goal." << std::endl;
+  } else {
+    std::cout << "[ImGuiVisualizer] Goal setting mode disabled." << std::endl;
+  }
 }
 
 } // namespace viz

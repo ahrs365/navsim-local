@@ -60,6 +60,8 @@ public:
   void endFrame() override;
   bool shouldClose() const override;
   void shutdown() override;
+  bool hasNewGoal(planning::Pose2d& new_goal) override;
+  void setGoalSettingMode(bool enable) override;
 
 private:
   Config config_;
@@ -117,6 +119,11 @@ private:
   bool has_planning_result_ = false;
   std::chrono::steady_clock::time_point last_world_update_;
   std::string last_result_summary_;
+
+  // 目标点设置相关状态
+  bool goal_setting_mode_ = false;        // 是否处于目标点设置模式
+  bool has_new_goal_ = false;             // 是否有新的目标点被设置
+  planning::Pose2d new_goal_;             // 新设置的目标点
   
   // 内部辅助函数
   void handleEvents();

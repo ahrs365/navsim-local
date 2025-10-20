@@ -83,6 +83,7 @@ ls -lh plugins/perception/*.so
   --scenario <场景文件> \
   --planner <规划器名称> \
   [--perception <感知插件名称>]
+  -- visualize 启用可视化
 ```
 
 ### 示例 1：使用直线规划器
@@ -168,7 +169,7 @@ JPS 规划器需要 ESDF 距离场：
 ./navsim_local_debug \
   --scenario ../scenarios/complex_obstacles.json \
   --planner JpsPlanner \
-  --perception EsdfBuilder
+  --perception EsdfBuilder --visualize
 ```
 
 ## 📂 场景文件格式

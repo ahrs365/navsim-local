@@ -46,20 +46,20 @@
     {
       "type": "circle",
       "center": {"x": 5.0, "y": 2.0},
-      "radius": 1.0,
+      "radius": 0.5,
       "confidence": 1.0
     },
     {
       "type": "circle",
       "center": {"x": 10.0, "y": -2.0},
-      "radius": 1.0,
+      "radius": 0.5,
       "confidence": 1.0
     },
     {
       "type": "rectangle",
       "pose": {"x": 15.0, "y": 1.5, "yaw": 0.0},
       "width": 2.0,
-      "height": 1.0,
+      "height": 5.0,
       "confidence": 1.0
     }
   ],

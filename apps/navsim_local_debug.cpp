@@ -37,12 +37,16 @@
 #include "plugin/framework/plugin_registry.hpp"
 #include "plugin/data/planning_result.hpp"
 #include "plugin/data/perception_input.hpp"
+#include "viz/visualizer_interface.hpp"
 
 #include <iostream>
 #include <string>
 #include <vector>
 #include <chrono>
 #include <cstring>
+#include <iomanip>
+#include <sstream>
+#include <thread>
 
 using namespace navsim;
 
@@ -143,6 +147,9 @@ bool parseCommandLine(int argc, char** argv, CommandLineArgs& args) {
   return true;
 }
 
+// ========== 全局变量 ==========
+std::unique_ptr<viz::IVisualizer> g_visualizer = nullptr;
+
 // ========== 主函数 ==========
 
 int main(int argc, char** argv) {
@@ -196,7 +203,41 @@ int main(int argc, char** argv) {
   for (const auto& name : plugin_names) {
     std::cout << "    - " << name << std::endl;
   }
-  
+
+  // 2.5. 初始化可视化器（如果启用）
+  if (args.visualize) {
+    std::cout << "[2.5/5] Initializing visualizer..." << std::endl;
+    g_visualizer = viz::createVisualizer(true);
+    if (g_visualizer && g_visualizer->initialize()) {
+      std::cout << "  Visualizer initialized successfully" << std::endl;
+
+      // 设置系统信息
+      viz::IVisualizer::SystemInfo system_info;
+      system_info.general["Tool"] = "NavSim Local Debug";
+      system_info.general["Version"] = "1.0.0";
+      system_info.general["Scenario"] = args.scenario_file;
+      system_info.general["Planner"] = args.planner_name;
+      system_info.general["Visualizer"] = "ImGui (SDL2/OpenGL2)";
+      if (!args.perception_plugins.empty()) {
+        for (size_t i = 0; i < args.perception_plugins.size(); ++i) {
+          system_info.perception_plugins.push_back(args.perception_plugins[i]);
+        }
+      }
+      system_info.planner_plugins.push_back("Primary: " + args.planner_name);
+      g_visualizer->setSystemInfo(system_info);
+
+      // 设置连接状态
+      viz::IVisualizer::ConnectionStatus connection_status;
+      connection_status.connected = true;
+      connection_status.label = "Local Debug";
+      connection_status.message = "Running local debug session";
+      g_visualizer->updateConnectionStatus(connection_status);
+    } else {
+      std::cerr << "  Failed to initialize visualizer" << std::endl;
+      g_visualizer.reset();
+    }
+  }
+
   // 3. 加载场景
   std::cout << "[3/5] Loading scenario from: " << args.scenario_file << std::endl;
   planning::PlanningContext context;
@@ -210,6 +251,23 @@ int main(int argc, char** argv) {
             << context.ego.pose.y << ", " << context.ego.pose.yaw << ")" << std::endl;
   std::cout << "  Goal pose: (" << context.task.goal_pose.x << ", "
             << context.task.goal_pose.y << ", " << context.task.goal_pose.yaw << ")" << std::endl;
+
+  // 可视化场景数据
+  if (g_visualizer) {
+    g_visualizer->beginFrame();
+    g_visualizer->showDebugInfo("Status", "Scenario Loaded");
+    g_visualizer->drawEgo(context.ego);
+    g_visualizer->drawGoal(context.task.goal_pose);
+
+    // 可视化BEV障碍物（如果有）
+    if (context.bev_obstacles) {
+      g_visualizer->drawBEVObstacles(*context.bev_obstacles);
+    }
+
+    // 可视化动态障碍物
+    g_visualizer->drawDynamicObstacles(context.dynamic_obstacles);
+    g_visualizer->endFrame();
+  }
 
   // 3.5. 运行感知插件（如果有）
   if (!args.perception_plugins.empty()) {
@@ -276,6 +334,20 @@ int main(int argc, char** argv) {
       std::cout << "    - ESDF map: " << context.esdf_map->config.width
                 << "x" << context.esdf_map->config.height << " cells" << std::endl;
     }
+
+    // 可视化感知处理结果
+    if (g_visualizer) {
+      g_visualizer->beginFrame();
+      g_visualizer->showDebugInfo("Status", "Perception Completed");
+      g_visualizer->updatePlanningContext(context);
+
+      // 可视化栅格地图
+      if (context.occupancy_grid) {
+        g_visualizer->drawOccupancyGrid(*context.occupancy_grid);
+      }
+
+      g_visualizer->endFrame();
+    }
   }
   
   // 4. 运行规划
@@ -334,6 +406,39 @@ int main(int argc, char** argv) {
     std::cout << "  Computation time: " << duration << " ms" << std::endl;
     std::cout << "  Total cost: " << result.total_cost << std::endl;
   }
+
+  // 可视化规划结果
+  if (g_visualizer) {
+    g_visualizer->beginFrame();
+
+    // 更新状态信息
+    if (success) {
+      g_visualizer->showDebugInfo("Status", "Planning Success");
+      g_visualizer->showDebugInfo("Planner", result.planner_name);
+
+      std::ostringstream trajectory_info;
+      trajectory_info << result.trajectory.size() << " points";
+      g_visualizer->showDebugInfo("Trajectory", trajectory_info.str());
+
+      std::ostringstream time_info;
+      time_info << std::fixed << std::setprecision(2) << duration << " ms";
+      g_visualizer->showDebugInfo("Computation Time", time_info.str());
+
+      std::ostringstream cost_info;
+      cost_info << std::fixed << std::setprecision(3) << result.total_cost;
+      g_visualizer->showDebugInfo("Total Cost", cost_info.str());
+
+      // 可视化轨迹
+      g_visualizer->drawTrajectory(result.trajectory, result.planner_name);
+      g_visualizer->updatePlanningResult(result);
+    } else {
+      g_visualizer->showDebugInfo("Status", "Planning Failed");
+      g_visualizer->showDebugInfo("Failure Reason", result.failure_reason);
+      g_visualizer->updatePlanningResult(result);
+    }
+
+    g_visualizer->endFrame();
+  }
   
   // 保存结果到文件（如果指定）
   if (!args.output_file.empty() && success) {
@@ -342,15 +447,86 @@ int main(int argc, char** argv) {
   }
   
   // 可视化（如果启用）
-  if (args.visualize && success) {
-    std::cout << "\nLaunching visualization..." << std::endl;
-    // TODO: 实现可视化
-    #ifdef ENABLE_VISUALIZATION
-    std::cout << "Visualization is enabled in build" << std::endl;
-    #else
-    std::cout << "Warning: Visualization is not enabled in this build" << std::endl;
-    std::cout << "Rebuild with -DENABLE_VISUALIZATION=ON to enable visualization" << std::endl;
-    #endif
+  if (args.visualize && g_visualizer) {
+    std::cout << "\nVisualization is running..." << std::endl;
+    std::cout << "Press Ctrl+C to exit, or close the visualization window" << std::endl;
+
+    // 持续渲染可视化
+    while (!g_visualizer->shouldClose()) {
+      g_visualizer->beginFrame();
+
+      // 重新渲染所有数据
+      g_visualizer->drawEgo(context.ego);
+      g_visualizer->drawGoal(context.task.goal_pose);
+
+      if (context.bev_obstacles) {
+        g_visualizer->drawBEVObstacles(*context.bev_obstacles);
+      }
+
+      g_visualizer->drawDynamicObstacles(context.dynamic_obstacles);
+
+      if (context.occupancy_grid) {
+        g_visualizer->drawOccupancyGrid(*context.occupancy_grid);
+      }
+
+      if (success) {
+        g_visualizer->drawTrajectory(result.trajectory, result.planner_name);
+      }
+
+      g_visualizer->endFrame();
+
+      // 检查是否有新的目标点被设置
+      planning::Pose2d new_goal;
+      if (g_visualizer->hasNewGoal(new_goal)) {
+        std::cout << "\n[Replanning] New goal detected: (" << new_goal.x << ", " << new_goal.y << ")" << std::endl;
+
+        // 更新规划上下文中的目标点
+        context.task.goal_pose = new_goal;
+
+        // 更新可视化中显示的目标点
+        g_visualizer->drawGoal(context.task.goal_pose);
+
+        // 执行重规划
+        std::cout << "[Replanning] Starting replanning..." << std::endl;
+        auto start_time = std::chrono::steady_clock::now();
+
+        plugin::PlanningResult new_result;
+        auto deadline = std::chrono::milliseconds(5000);  // 5秒超时
+        bool replan_success = planner_manager.plan(context, deadline, new_result);
+
+        auto end_time = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+
+        // 输出重规划结果
+        std::cout << "[Replanning] Result:" << std::endl;
+        std::cout << "  Success: " << (replan_success ? "yes" : "no") << std::endl;
+        if (!replan_success) {
+          std::cout << "  Failure reason: " << new_result.failure_reason << std::endl;
+        } else {
+          std::cout << "  Planner: " << new_result.planner_name << std::endl;
+          std::cout << "  Trajectory points: " << new_result.trajectory.size() << std::endl;
+          std::cout << "  Computation time: " << duration << " ms" << std::endl;
+          std::cout << "  Total cost: " << new_result.total_cost << std::endl;
+
+          // 更新成功状态和结果
+          success = replan_success;
+          result = new_result;
+
+          // 更新可视化
+          g_visualizer->updatePlanningResult(result);
+        }
+        std::cout << "[Replanning] Done\n" << std::endl;
+      }
+
+      // 小延迟以控制帧率
+      std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 FPS
+    }
+
+    // 清理可视化资源
+    g_visualizer->shutdown();
+  } else if (args.visualize && !g_visualizer) {
+    std::cout << "\nWarning: Visualization was requested but visualizer failed to initialize" << std::endl;
+    std::cout << "Check if visualization is enabled in the build" << std::endl;
   }
   
   std::cout << "\n=== Done ===" << std::endl;

@@ -117,6 +117,19 @@ public:
    * @brief 清理资源
    */
   virtual void shutdown() = 0;
+
+  /**
+   * @brief 检查是否有新的目标点被设置
+   * @param new_goal [out] 如果有新目标点，返回新的目标位置
+   * @return 是否有新目标点
+   */
+  virtual bool hasNewGoal(planning::Pose2d& new_goal) = 0;
+
+  /**
+   * @brief 启用/禁用目标点设置模式
+   * @param enable 是否启用目标点设置模式
+   */
+  virtual void setGoalSettingMode(bool enable) = 0;
 };
 
 /**
@@ -141,6 +154,8 @@ public:
   void endFrame() override {}
   bool shouldClose() const override { return false; }
   void shutdown() override {}
+  bool hasNewGoal(planning::Pose2d&) override { return false; }
+  void setGoalSettingMode(bool) override {}
 };
 
 /**

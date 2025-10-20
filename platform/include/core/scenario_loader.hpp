@@ -125,6 +125,22 @@ private:
   static nlohmann::json point2dToJson(const Point2d& point);
   static nlohmann::json pose2dToJson(const Pose2d& pose);
   static nlohmann::json twist2dToJson(const Twist2d& twist);
+
+  // ========== Online 格式兼容性 ==========
+
+  /**
+   * @brief 检测是否为 online 模式保存的格式
+   * @param json JSON 对象
+   * @return 是否为 online 格式
+   */
+  static bool isOnlineFormat(const nlohmann::json& json);
+
+  /**
+   * @brief 将 online 格式转换为内部格式
+   * @param online_json Online 格式的 JSON
+   * @return 内部格式的 JSON
+   */
+  static nlohmann::json convertOnlineToInternal(const nlohmann::json& online_json);
 };
 
 } // namespace planning

@@ -39,43 +39,50 @@ bool ScenarioLoader::loadFromString(const std::string& json_str, PlanningContext
 
 bool ScenarioLoader::loadFromJson(const nlohmann::json& json, PlanningContext& context) {
   try {
+    // 检测并转换 online 格式
+    nlohmann::json internal_json = json;
+    if (isOnlineFormat(json)) {
+      std::cout << "[ScenarioLoader] Detected online format, converting..." << std::endl;
+      internal_json = convertOnlineToInternal(json);
+    }
+
     // 解析时间戳
-    if (json.contains("timestamp")) {
-      context.timestamp = json["timestamp"].get<double>();
+    if (internal_json.contains("timestamp")) {
+      context.timestamp = internal_json["timestamp"].get<double>();
     }
 
     // 解析规划时域
-    if (json.contains("planning_horizon")) {
-      context.planning_horizon = json["planning_horizon"].get<double>();
+    if (internal_json.contains("planning_horizon")) {
+      context.planning_horizon = internal_json["planning_horizon"].get<double>();
     }
 
     // 解析自车状态
-    if (json.contains("ego")) {
-      if (!parseEgo(json["ego"], context.ego)) {
+    if (internal_json.contains("ego")) {
+      if (!parseEgo(internal_json["ego"], context.ego)) {
         std::cerr << "[ScenarioLoader] Failed to parse ego vehicle" << std::endl;
         return false;
       }
     }
 
     // 解析任务目标
-    if (json.contains("task")) {
-      if (!parseTask(json["task"], context.task)) {
+    if (internal_json.contains("task")) {
+      if (!parseTask(internal_json["task"], context.task)) {
         std::cerr << "[ScenarioLoader] Failed to parse task" << std::endl;
         return false;
       }
     }
 
     // 解析静态障碍物
-    if (json.contains("obstacles")) {
-      if (!parseObstacles(json["obstacles"], context)) {
+    if (internal_json.contains("obstacles")) {
+      if (!parseObstacles(internal_json["obstacles"], context)) {
         std::cerr << "[ScenarioLoader] Failed to parse obstacles" << std::endl;
         return false;
       }
     }
 
     // 解析动态障碍物
-    if (json.contains("dynamic_obstacles")) {
-      if (!parseDynamicObstacles(json["dynamic_obstacles"], context)) {
+    if (internal_json.contains("dynamic_obstacles")) {
+      if (!parseDynamicObstacles(internal_json["dynamic_obstacles"], context)) {
         std::cerr << "[ScenarioLoader] Failed to parse dynamic obstacles" << std::endl;
         return false;
       }
@@ -479,6 +486,256 @@ nlohmann::json ScenarioLoader::dynamicObstaclesToJson(const PlanningContext& con
   }
 
   return json;
+}
+
+// ========== Online 格式兼容性 ==========
+
+bool ScenarioLoader::isOnlineFormat(const nlohmann::json& json) {
+  // Online 格式的特征：
+  // - 有 "startPose" 和 "goalPose" 而不是 "ego" 和 "task"
+  // - 有 "obstacles" 对象包含 "circles", "polygons", "dynamic" 数组
+  // - 有 "chassisType" 和 "chassisConfig"
+  // - 有 "name" 而不是 "scenario_name"
+
+  bool has_online_pose_fields = json.contains("startPose") && json.contains("goalPose");
+  bool has_online_obstacles = json.contains("obstacles") && json["obstacles"].is_object() &&
+                              (json["obstacles"].contains("circles") ||
+                               json["obstacles"].contains("polygons") ||
+                               json["obstacles"].contains("dynamic"));
+  bool has_chassis_fields = json.contains("chassisType") || json.contains("chassisConfig");
+  bool has_name_field = json.contains("name") && !json.contains("scenario_name");
+
+  // 如果有多个 online 格式特征，则认为是 online 格式
+  int online_features = 0;
+  if (has_online_pose_fields) online_features++;
+  if (has_online_obstacles) online_features++;
+  if (has_chassis_fields) online_features++;
+  if (has_name_field) online_features++;
+
+  return online_features >= 2;
+}
+
+nlohmann::json ScenarioLoader::convertOnlineToInternal(const nlohmann::json& online_json) {
+  nlohmann::json internal_json;
+
+  // 设置默认值
+  internal_json["scenario_name"] = online_json.value("name", "converted_online_scenario");
+  internal_json["description"] = "Converted from online format";
+  internal_json["timestamp"] = online_json.value("timestamp", 0.0) / 1000.0; // 转换毫秒到秒
+  internal_json["planning_horizon"] = 5.0; // 默认规划时域
+
+  // 转换自车信息
+  nlohmann::json ego;
+  if (online_json.contains("startPose")) {
+    ego["pose"] = {
+      {"x", online_json["startPose"].value("x", 0.0)},
+      {"y", online_json["startPose"].value("y", 0.0)},
+      {"yaw", online_json["startPose"].value("yaw", 0.0)}
+    };
+  } else {
+    ego["pose"] = {{"x", 0.0}, {"y", 0.0}, {"yaw", 0.0}};
+  }
+
+  ego["twist"] = {{"vx", 0.0}, {"vy", 0.0}, {"omega", 0.0}};
+
+  // 从 chassisConfig 提取车辆参数
+  if (online_json.contains("chassisType")) {
+    ego["chassis_model"] = online_json["chassisType"].get<std::string>();
+  } else {
+    ego["chassis_model"] = "differential";
+  }
+
+  if (online_json.contains("chassisConfig")) {
+    const auto& chassis = online_json["chassisConfig"];
+
+    // 运动学参数
+    nlohmann::json kinematics;
+    if (chassis.contains("geometry")) {
+      const auto& geom = chassis["geometry"];
+      kinematics["wheelbase"] = geom.value("wheelbase", 2.8);
+      kinematics["track_width"] = geom.value("track_width", 2.0);
+      kinematics["body_length"] = geom.value("body_length", 4.8);
+      kinematics["body_width"] = geom.value("body_width", 2.0);
+      kinematics["wheel_radius"] = geom.value("wheel_radius", 0.3);
+      kinematics["front_overhang"] = geom.value("front_overhang", 1.0);
+      kinematics["rear_overhang"] = geom.value("rear_overhang", 1.0);
+      kinematics["width"] = geom.value("body_width", 2.0);
+      kinematics["height"] = geom.value("body_height", 1.8);
+    } else {
+      // 默认值
+      kinematics = {
+        {"wheelbase", 2.8}, {"track_width", 2.0}, {"body_length", 4.8},
+        {"body_width", 2.0}, {"wheel_radius", 0.3}, {"front_overhang", 1.0},
+        {"rear_overhang", 1.0}, {"width", 2.0}, {"height", 1.8}
+      };
+    }
+    ego["kinematics"] = kinematics;
+
+    // 动力学约束
+    nlohmann::json limits;
+    if (chassis.contains("limits")) {
+      const auto& lim = chassis["limits"];
+      limits["max_velocity"] = lim.value("v_max", 15.0);
+      limits["max_acceleration"] = lim.value("a_max", 3.0);
+      limits["max_deceleration"] = 8.0;
+      limits["max_steer_angle"] = lim.value("steer_max", 0.6);
+      limits["max_steer_rate"] = 1.0;
+      limits["max_jerk"] = 3.0;
+      limits["max_curvature"] = 0.2;
+    } else {
+      limits = {
+        {"max_velocity", 15.0}, {"max_acceleration", 3.0}, {"max_deceleration", 8.0},
+        {"max_steer_angle", 0.6}, {"max_steer_rate", 1.0}, {"max_jerk", 3.0},
+        {"max_curvature", 0.2}
+      };
+    }
+    ego["limits"] = limits;
+  } else {
+    // 默认运动学和动力学参数
+    ego["kinematics"] = {
+      {"wheelbase", 2.8}, {"track_width", 2.0}, {"body_length", 4.8},
+      {"body_width", 2.0}, {"wheel_radius", 0.3}, {"front_overhang", 1.0},
+      {"rear_overhang", 1.0}, {"width", 2.0}, {"height", 1.8}
+    };
+    ego["limits"] = {
+      {"max_velocity", 15.0}, {"max_acceleration", 3.0}, {"max_deceleration", 8.0},
+      {"max_steer_angle", 0.6}, {"max_steer_rate", 1.0}, {"max_jerk", 3.0},
+      {"max_curvature", 0.2}
+    };
+  }
+
+  internal_json["ego"] = ego;
+
+  // 转换任务目标
+  nlohmann::json task;
+  if (online_json.contains("goalPose")) {
+    const auto& goal = online_json["goalPose"];
+    task["goal_pose"] = {
+      {"x", goal.value("x", 20.0)},
+      {"y", goal.value("y", 0.0)},
+      {"yaw", goal.value("yaw", 0.0)}
+    };
+
+    // 提取容差
+    if (goal.contains("tol")) {
+      task["tolerance"] = {
+        {"position", goal["tol"].value("pos", 0.5)},
+        {"yaw", goal["tol"].value("yaw", 0.2)}
+      };
+    } else {
+      task["tolerance"] = {{"position", 0.5}, {"yaw", 0.2}};
+    }
+  } else {
+    task["goal_pose"] = {{"x", 20.0}, {"y", 0.0}, {"yaw", 0.0}};
+    task["tolerance"] = {{"position", 0.5}, {"yaw", 0.2}};
+  }
+
+  task["type"] = "GOTO_GOAL";
+  internal_json["task"] = task;
+
+  // 转换静态障碍物
+  nlohmann::json obstacles = nlohmann::json::array();
+
+  if (online_json.contains("obstacles") && online_json["obstacles"].is_object()) {
+    const auto& online_obstacles = online_json["obstacles"];
+
+    // 转换圆形障碍物
+    if (online_obstacles.contains("circles") && online_obstacles["circles"].is_array()) {
+      for (const auto& circle : online_obstacles["circles"]) {
+        nlohmann::json obs;
+        obs["type"] = "circle";
+        obs["center"] = {
+          {"x", circle.value("x", 0.0)},
+          {"y", circle.value("y", 0.0)}
+        };
+        obs["radius"] = circle.value("radius", 1.0);
+        obs["confidence"] = 1.0;
+        obstacles.push_back(obs);
+      }
+    }
+
+    // 转换多边形障碍物
+    if (online_obstacles.contains("polygons") && online_obstacles["polygons"].is_array()) {
+      for (const auto& polygon : online_obstacles["polygons"]) {
+        nlohmann::json obs;
+        obs["type"] = "polygon";
+        obs["vertices"] = nlohmann::json::array();
+
+        if (polygon.contains("points") && polygon["points"].is_array()) {
+          for (const auto& point : polygon["points"]) {
+            obs["vertices"].push_back({
+              {"x", point.value("x", 0.0)},
+              {"y", point.value("y", 0.0)}
+            });
+          }
+        }
+        obs["confidence"] = 1.0;
+        obstacles.push_back(obs);
+      }
+    }
+  }
+
+  internal_json["obstacles"] = obstacles;
+
+  // 转换动态障碍物
+  nlohmann::json dynamic_obstacles = nlohmann::json::array();
+
+  if (online_json.contains("obstacles") && online_json["obstacles"].contains("dynamic")) {
+    const auto& online_dynamic = online_json["obstacles"]["dynamic"];
+
+    for (size_t i = 0; i < online_dynamic.size(); ++i) {
+      const auto& dyn_obs = online_dynamic[i];
+      nlohmann::json obs;
+
+      obs["id"] = static_cast<int>(i + 1);
+      obs["type"] = "vehicle";
+
+      if (dyn_obs.contains("kind")) {
+        std::string kind = dyn_obs["kind"].get<std::string>();
+        obs["shape_type"] = (kind == "circle") ? "circle" : "rectangle";
+      } else {
+        obs["shape_type"] = "rectangle";
+      }
+
+      if (dyn_obs.contains("state")) {
+        const auto& state = dyn_obs["state"];
+        obs["current_pose"] = {
+          {"x", state.value("x", 0.0)},
+          {"y", state.value("y", 0.0)},
+          {"yaw", state.value("yaw", 0.0)}
+        };
+        obs["current_twist"] = {
+          {"vx", state.value("vx", 0.0)},
+          {"vy", state.value("vy", 0.0)},
+          {"omega", 0.0}
+        };
+      }
+
+      if (dyn_obs.contains("data")) {
+        const auto& data = dyn_obs["data"];
+        if (data.contains("w") && data.contains("h")) {
+          obs["width"] = data.value("w", 2.0);
+          obs["length"] = data.value("h", 4.5);
+        } else if (data.contains("r")) {
+          obs["width"] = data.value("r", 1.0) * 2.0;
+          obs["length"] = data.value("r", 1.0) * 2.0;
+        } else {
+          obs["width"] = 2.0;
+          obs["length"] = 4.5;
+        }
+      } else {
+        obs["width"] = 2.0;
+        obs["length"] = 4.5;
+      }
+
+      obs["height"] = 1.8;
+      dynamic_obstacles.push_back(obs);
+    }
+  }
+
+  internal_json["dynamic_obstacles"] = dynamic_obstacles;
+
+  return internal_json;
 }
 
 } // namespace planning

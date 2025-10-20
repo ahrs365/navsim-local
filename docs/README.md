@@ -30,7 +30,7 @@ cmake .. -DBUILD_PLUGINS=ON && make -j$(nproc)
 ./navsim_local_debug \
   --scenario ../scenarios/simple_corridor.json \
   --planner AstarPlanner \
-  --perception GridMapBuilder
+  --perception GridMapBuilder --visualize
 ```
 
 ---
@@ -95,7 +95,7 @@ python3 tools/navsim_create_plugin.py \
 
 # 编译测试
 cd build && cmake .. && make my_planner_plugin
-./navsim_local_debug --planner MyPlanner --scenario ../scenarios/test.json
+./navsim_local_debug --planner MyPlanner --scenario ../scenarios/test.json --visualize
 ```
 
 ---

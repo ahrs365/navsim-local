@@ -47,6 +47,7 @@
 #include <iomanip>
 #include <sstream>
 #include <thread>
+#include <fstream>
 
 using namespace navsim;
 
@@ -356,23 +357,67 @@ int main(int argc, char** argv) {
   // 创建规划器管理器
   plugin::PlannerPluginManager planner_manager;
 
-  // 创建默认配置
+  // 从 default.json 加载配置
   nlohmann::json planner_configs;
-  planner_configs[args.planner_name] = {
-    {"safe_dis", 0.3},
-    {"max_jps_dis", 10.0},
-    {"distance_weight", 1.0},
-    {"yaw_weight", 1.0},
-    {"traj_cut_length", 5.0},
-    {"max_vel", 2.0},
-    {"max_acc", 2.0},
-    {"max_omega", 1.0},
-    {"max_domega", 1.0},
-    {"sample_time", 0.1},
-    {"min_traj_num", 10},
-    {"jps_truncation_time", 5.0},
-    {"verbose", args.verbose}
+  // 尝试多个可能的配置文件路径
+  std::vector<std::string> config_paths = {
+    "config/default.json",
+    "../config/default.json",
+    "../../config/default.json"
   };
+
+  std::string config_file;
+  std::ifstream config_stream;
+  for (const auto& path : config_paths) {
+    config_stream.open(path);
+    if (config_stream.is_open()) {
+      config_file = path;
+      break;
+    }
+  }
+  if (config_stream.is_open()) {
+    try {
+      nlohmann::json full_config;
+      config_stream >> full_config;
+      if (full_config.contains("planning") && full_config["planning"].contains("planners")) {
+        planner_configs = full_config["planning"]["planners"];
+        std::cout << "  Loaded planner configurations from " << config_file << std::endl;
+        if (args.verbose && planner_configs.contains(args.planner_name)) {
+          std::cout << "  Configuration for " << args.planner_name << ":" << std::endl;
+          std::cout << planner_configs[args.planner_name].dump(2) << std::endl;
+        }
+      } else {
+        std::cerr << "  Warning: Config file does not contain planning.planners section" << std::endl;
+      }
+    } catch (const std::exception& e) {
+      std::cerr << "  Warning: Failed to load config from " << config_file << ": " << e.what() << std::endl;
+    }
+  } else {
+    std::cerr << "  Warning: Could not open config file: " << config_file << std::endl;
+  }
+
+  // 如果没有从文件加载到配置，使用默认配置
+  if (!planner_configs.contains(args.planner_name)) {
+    std::cout << "  Using default configuration for " << args.planner_name << std::endl;
+    planner_configs[args.planner_name] = {
+      {"safe_dis", 0.3},
+      {"max_jps_dis", 10.0},
+      {"distance_weight", 1.0},
+      {"yaw_weight", 1.0},
+      {"traj_cut_length", 5.0},
+      {"max_vel", 2.0},
+      {"max_acc", 2.0},
+      {"max_omega", 1.0},
+      {"max_domega", 1.0},
+      {"sample_time", 0.1},
+      {"min_traj_num", 10},
+      {"jps_truncation_time", 5.0},
+      {"verbose", args.verbose}
+    };
+  } else {
+    // 覆盖 verbose 设置
+    planner_configs[args.planner_name]["verbose"] = args.verbose;
+  }
 
   if (!planner_manager.loadPlanners(args.planner_name, args.planner_name, false, planner_configs)) {
     std::cerr << "  Failed to load planner: " << args.planner_name << std::endl;
@@ -440,8 +485,22 @@ int main(int argc, char** argv) {
 
         if (debug_paths_ptr && !debug_paths_ptr->empty()) {
           std::cout << "[Debug] Drawing " << debug_paths_ptr->size() << " debug paths for JPS visualization" << std::endl;
-          std::vector<std::string> path_names{"Raw JPS Path", "Optimized Path", "Sample Trajectory"};
-          std::vector<std::string> colors{"red", "green", "blue"};
+          std::vector<std::string> path_names{
+            "Raw JPS Path",
+            "Optimized Path",
+            "Sample Trajectory",
+            "MINCO Final",
+            "MINCO Stage1 (Preprocessing)",
+            "MINCO Stage2 (Main Opt)"
+          };
+          std::vector<std::string> colors{
+            "red",      // Raw JPS Path
+            "green",    // Optimized Path
+            "blue",     // Sample Trajectory
+            "magenta",  // MINCO Final
+            "orange",   // MINCO Stage1
+            "cyan"      // MINCO Stage2
+          };
           g_visualizer->drawDebugPaths(*debug_paths_ptr, path_names, colors);
         } else {
           std::cout << "[Debug] No debug paths available for JPS visualization" << std::endl;
@@ -542,8 +601,22 @@ int main(int argc, char** argv) {
 
             if (debug_paths_ptr && !debug_paths_ptr->empty()) {
               std::cout << "[Replanning] Drawing " << debug_paths_ptr->size() << " debug paths for JPS visualization" << std::endl;
-              std::vector<std::string> path_names{"Raw JPS Path", "Optimized Path", "Sample Trajectory"};
-              std::vector<std::string> colors{"red", "green", "blue"};
+              std::vector<std::string> path_names{
+                "Raw JPS Path",
+                "Optimized Path",
+                "Sample Trajectory",
+                "MINCO Final",
+                "MINCO Stage1 (Preprocessing)",
+                "MINCO Stage2 (Main Opt)"
+              };
+              std::vector<std::string> colors{
+                "red",      // Raw JPS Path
+                "green",    // Optimized Path
+                "blue",     // Sample Trajectory
+                "magenta",  // MINCO Final
+                "orange",   // MINCO Stage1
+                "cyan"      // MINCO Stage2
+              };
               g_visualizer->drawDebugPaths(*debug_paths_ptr, path_names, colors);
             }
           }

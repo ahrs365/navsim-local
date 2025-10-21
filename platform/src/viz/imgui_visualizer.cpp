@@ -53,11 +53,11 @@ bool ImGuiVisualizer::initialize() {
 
   // 列出所有可用的渲染器
   int num_drivers = SDL_GetNumRenderDrivers();
-  std::cout << "[ImGuiVisualizer] Available render drivers (" << num_drivers << "):" << std::endl;
+  // std::cout << "[ImGuiVisualizer] Available render drivers (" << num_drivers << "):" << std::endl;
   for (int i = 0; i < num_drivers; ++i) {
     SDL_RendererInfo info;
     SDL_GetRenderDriverInfo(i, &info);
-    std::cout << "  [" << i << "] " << info.name << std::endl;
+    // std::cout << "  [" << i << "] " << info.name << std::endl;
   }
 
   // 创建 SDL_Renderer（优先使用软件渲染器）
@@ -111,10 +111,10 @@ bool ImGuiVisualizer::initialize() {
   SDL_RendererInfo renderer_info;
   SDL_GetRendererInfo(sdl_renderer_, &renderer_info);
 
-  std::cout << "[ImGuiVisualizer] ========== Initialized successfully ==========" << std::endl;
-  std::cout << "[ImGuiVisualizer] Window size: " << config_.window_width << "x" << config_.window_height << std::endl;
-  std::cout << "[ImGuiVisualizer] Renderer: " << renderer_info.name << std::endl;
-  std::cout << "[ImGuiVisualizer] Using SDL_Renderer (no OpenGL dependency)" << std::endl;
+  // std::cout << "[ImGuiVisualizer] ========== Initialized successfully ==========" << std::endl;
+  // std::cout << "[ImGuiVisualizer] Window size: " << config_.window_width << "x" << config_.window_height << std::endl;
+  // std::cout << "[ImGuiVisualizer] Renderer: " << renderer_info.name << std::endl;
+  // std::cout << "[ImGuiVisualizer] Using SDL_Renderer (no OpenGL dependency)" << std::endl;
   return true;
 }
 
@@ -163,14 +163,14 @@ void ImGuiVisualizer::beginFrame() {
   ImGui::NewFrame();                   // 3. 最后 ImGui 核心
 
   // 调试输出
-  static int frame_count = 0;
-  if (frame_count++ % 60 == 0) {  // 每 60 帧输出一次
-    std::cout << "[Viz] Frame " << frame_count
-              << ", Ego: (" << ego_.pose.x << ", " << ego_.pose.y << ")"
-              << ", Trajectory: " << trajectory_.size() << " points"
-              << ", BEV circles: " << bev_obstacles_.circles.size()
-              << std::endl;
-  }
+  // static int frame_count = 0;
+  // if (frame_count++ % 60 == 0) {  // 每 60 帧输出一次
+  //   std::cout << "[Viz] Frame " << frame_count
+  //             << ", Ego: (" << ego_.pose.x << ", " << ego_.pose.y << ")"
+  //             << ", Trajectory: " << trajectory_.size() << " points"
+  //             << ", BEV circles: " << bev_obstacles_.circles.size()
+  //             << std::endl;
+  // }
 }
 
 void ImGuiVisualizer::handleEvents() {
@@ -196,16 +196,16 @@ void ImGuiVisualizer::handleEvents() {
           break;
         case SDLK_f:
           view_state_.follow_ego = !view_state_.follow_ego;
-          std::cout << "[ImGuiVisualizer] Follow ego: " 
-                    << (view_state_.follow_ego ? "ON" : "OFF") << std::endl;
+          // std::cout << "[ImGuiVisualizer] Follow ego: "
+          //           << (view_state_.follow_ego ? "ON" : "OFF") << std::endl;
           break;
         case SDLK_EQUALS:  // '+' key
           view_state_.zoom *= 1.2;
-          std::cout << "[ImGuiVisualizer] Zoom: " << view_state_.zoom << std::endl;
+          // std::cout << "[ImGuiVisualizer] Zoom: " << view_state_.zoom << std::endl;
           break;
         case SDLK_MINUS:   // '-' key
           view_state_.zoom /= 1.2;
-          std::cout << "[ImGuiVisualizer] Zoom: " << view_state_.zoom << std::endl;
+          // std::cout << "[ImGuiVisualizer] Zoom: " << view_state_.zoom << std::endl;
           break;
       }
     }
@@ -215,11 +215,11 @@ void ImGuiVisualizer::handleEvents() {
 }
 
 void ImGuiVisualizer::drawEgo(const planning::EgoVehicle& ego) {
-  static int call_count = 0;
-  if (call_count++ % 60 == 0) {
-    std::cout << "[Viz] drawEgo called: pos=(" << ego.pose.x << ", " << ego.pose.y
-              << "), yaw=" << ego.pose.yaw << std::endl;
-  }
+  // static int call_count = 0;
+  // if (call_count++ % 60 == 0) {
+  //   std::cout << "[Viz] drawEgo called: pos=(" << ego.pose.x << ", " << ego.pose.y
+  //             << "), yaw=" << ego.pose.yaw << std::endl;
+  // }
   ego_ = ego;
   has_world_data_ = true;
   last_world_update_ = std::chrono::steady_clock::now();
@@ -243,18 +243,18 @@ void ImGuiVisualizer::drawGoal(const planning::Pose2d& goal) {
 
 void ImGuiVisualizer::drawBEVObstacles(const planning::BEVObstacles& obstacles) {
   // 🔍 调试日志：检查传入的障碍物数据
-  std::cout << "[ImGuiVisualizer] drawBEVObstacles called:" << std::endl;
-  std::cout << "[ImGuiVisualizer]   Input circles: " << obstacles.circles.size() << std::endl;
-  std::cout << "[ImGuiVisualizer]   Input rectangles: " << obstacles.rectangles.size() << std::endl;
-  std::cout << "[ImGuiVisualizer]   Input polygons: " << obstacles.polygons.size() << std::endl;
+  // std::cout << "[ImGuiVisualizer] drawBEVObstacles called:" << std::endl;
+  // std::cout << "[ImGuiVisualizer]   Input circles: " << obstacles.circles.size() << std::endl;
+  // std::cout << "[ImGuiVisualizer]   Input rectangles: " << obstacles.rectangles.size() << std::endl;
+  // std::cout << "[ImGuiVisualizer]   Input polygons: " << obstacles.polygons.size() << std::endl;
 
   // 缓存障碍物数据，在 renderScene() 中绘制
   bev_obstacles_ = obstacles;
 
   // 🔍 调试日志：检查缓存后的数据
-  std::cout << "[ImGuiVisualizer]   Cached circles: " << bev_obstacles_.circles.size() << std::endl;
-  std::cout << "[ImGuiVisualizer]   Cached rectangles: " << bev_obstacles_.rectangles.size() << std::endl;
-  std::cout << "[ImGuiVisualizer]   Cached polygons: " << bev_obstacles_.polygons.size() << std::endl;
+  // std::cout << "[ImGuiVisualizer]   Cached circles: " << bev_obstacles_.circles.size() << std::endl;
+  // std::cout << "[ImGuiVisualizer]   Cached rectangles: " << bev_obstacles_.rectangles.size() << std::endl;
+  // std::cout << "[ImGuiVisualizer]   Cached polygons: " << bev_obstacles_.polygons.size() << std::endl;
 
   debug_info_["BEV Circles"] = std::to_string(obstacles.circles.size());
   debug_info_["BEV Rectangles"] = std::to_string(obstacles.rectangles.size());
@@ -281,13 +281,13 @@ void ImGuiVisualizer::drawESDFMap(const planning::ESDFMap& esdf_map) {
 
 void ImGuiVisualizer::drawTrajectory(const std::vector<plugin::TrajectoryPoint>& trajectory,
                                       const std::string& planner_name) {
-  static int call_count = 0;
-  if (call_count++ % 60 == 0) {
-    std::cout << "[Viz] drawTrajectory called: " << trajectory.size() << " points, planner=" << planner_name << std::endl;
-    if (!trajectory.empty()) {
-      std::cout << "[Viz]   First point: (" << trajectory[0].pose.x << ", " << trajectory[0].pose.y << ")" << std::endl;
-    }
-  }
+  // static int call_count = 0;
+  // if (call_count++ % 60 == 0) {
+  //   std::cout << "[Viz] drawTrajectory called: " << trajectory.size() << " points, planner=" << planner_name << std::endl;
+  //   if (!trajectory.empty()) {
+  //     std::cout << "[Viz]   First point: (" << trajectory[0].pose.x << ", " << trajectory[0].pose.y << ")" << std::endl;
+  //   }
+  // }
   trajectory_ = trajectory;
   planner_name_ = planner_name;
   has_planning_result_ = true;
@@ -393,15 +393,33 @@ void ImGuiVisualizer::updatePlanningResult(const plugin::PlanningResult& result)
     result_info_["Violations"] = oss.str();
   }
 
+  // Check for optimization status in metadata
   if (!result.metadata.empty()) {
+    auto opt_success_it = result.metadata.find("optimization_success");
+    if (opt_success_it != result.metadata.end()) {
+      bool opt_success = (opt_success_it->second > 0.5);
+      result_info_["Optimization"] = opt_success ? "✓ Success" : "✗ Failed";
+
+      // If optimization failed but planning succeeded, it means we're using JPS path only
+      if (!opt_success && result.success) {
+        result_info_["Note"] = "Using JPS path (optimization failed)";
+      }
+    }
+
+    // Display other metadata
     std::ostringstream oss;
     for (auto it = result.metadata.begin(); it != result.metadata.end(); ++it) {
-      if (it != result.metadata.begin()) {
+      // Skip optimization_success as we've already displayed it
+      if (it->first == "optimization_success") continue;
+
+      if (oss.tellp() > 0) {
         oss << ", ";
       }
       oss << it->first << "=" << formatDouble(it->second, 3);
     }
-    result_info_["Metadata"] = oss.str();
+    if (oss.tellp() > 0) {
+      result_info_["Metadata"] = oss.str();
+    }
   }
 
   last_result_summary_ = result_info_["Status"];
@@ -455,11 +473,11 @@ void ImGuiVisualizer::renderScene() {
   ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
   ImVec2 canvas_size = ImGui::GetContentRegionAvail();
 
-  static int log_count = 0;
-  if (log_count++ % 60 == 0) {
-    std::cout << "[Viz]   Canvas pos=(" << canvas_pos.x << ", " << canvas_pos.y
-              << "), size=(" << canvas_size.x << ", " << canvas_size.y << ")" << std::endl;
-  }
+  // static int log_count = 0;
+  // if (log_count++ % 60 == 0) {
+  //   std::cout << "[Viz]   Canvas pos=(" << canvas_pos.x << ", " << canvas_pos.y
+  //             << "), size=(" << canvas_size.x << ", " << canvas_size.y << ")" << std::endl;
+  // }
 
   // 绘制背景
   draw_list->AddRectFilled(canvas_pos,
@@ -535,17 +553,17 @@ void ImGuiVisualizer::renderScene() {
     double grid_max_y = cfg.origin.y + cfg.height * cfg.resolution;
 
     // 🔍 调试信息：每 60 帧打印一次栅格地图边界信息
-    static int grid_log_count = 0;
-    if (grid_log_count++ % 60 == 0) {
-      std::cout << "[Viz] Occupancy Grid Boundary:" << std::endl;
-      std::cout << "  - Grid size: " << cfg.width << "x" << cfg.height << std::endl;
-      std::cout << "  - Resolution: " << cfg.resolution << " m" << std::endl;
-      std::cout << "  - Origin: (" << cfg.origin.x << ", " << cfg.origin.y << ")" << std::endl;
-      std::cout << "  - World bounds: X=[" << grid_min_x << ", " << grid_max_x << "], Y=[" << grid_min_y << ", " << grid_max_y << "]" << std::endl;
-      std::cout << "  - World size: " << (grid_max_x - grid_min_x) << " x " << (grid_max_y - grid_min_y) << " m" << std::endl;
-      std::cout << "  - View center: (" << view_state_.center_x << ", " << view_state_.center_y << ")" << std::endl;
-      std::cout << "  - View zoom: " << view_state_.zoom << std::endl;
-    }
+    // static int grid_log_count = 0;
+    // if (grid_log_count++ % 60 == 0) {
+    //   std::cout << "[Viz] Occupancy Grid Boundary:" << std::endl;
+    //   std::cout << "  - Grid size: " << cfg.width << "x" << cfg.height << std::endl;
+    //   std::cout << "  - Resolution: " << cfg.resolution << " m" << std::endl;
+    //   std::cout << "  - Origin: (" << cfg.origin.x << ", " << cfg.origin.y << ")" << std::endl;
+    //   std::cout << "  - World bounds: X=[" << grid_min_x << ", " << grid_max_x << "], Y=[" << grid_min_y << ", " << grid_max_y << "]" << std::endl;
+    //   std::cout << "  - World size: " << (grid_max_x - grid_min_x) << " x " << (grid_max_y - grid_min_y) << " m" << std::endl;
+    //   std::cout << "  - View center: (" << view_state_.center_x << ", " << view_state_.center_y << ")" << std::endl;
+    //   std::cout << "  - View zoom: " << view_state_.zoom << std::endl;
+    // }
 
     auto boundary_p1_temp = worldToScreen(grid_min_x, grid_min_y);
     auto boundary_p2_temp = worldToScreen(grid_max_x, grid_min_y);
@@ -558,12 +576,12 @@ void ImGuiVisualizer::renderScene() {
     ImVec2 boundary_p4(boundary_p4_temp.x, boundary_p4_temp.y);
 
     // 🔍 调试信息：打印屏幕坐标
-    if (grid_log_count % 60 == 1) {
-      std::cout << "  - Screen coords: P1=(" << boundary_p1.x << ", " << boundary_p1.y << "), "
-                << "P2=(" << boundary_p2.x << ", " << boundary_p2.y << "), "
-                << "P3=(" << boundary_p3.x << ", " << boundary_p3.y << "), "
-                << "P4=(" << boundary_p4.x << ", " << boundary_p4.y << ")" << std::endl;
-    }
+    // if (grid_log_count % 60 == 1) {
+    //   std::cout << "  - Screen coords: P1=(" << boundary_p1.x << ", " << boundary_p1.y << "), "
+    //             << "P2=(" << boundary_p2.x << ", " << boundary_p2.y << "), "
+    //             << "P3=(" << boundary_p3.x << ", " << boundary_p3.y << "), "
+    //             << "P4=(" << boundary_p4.x << ", " << boundary_p4.y << ")" << std::endl;
+    // }
 
     // 绘制边界框（亮黄色实线，更粗更明显）
     const float dash_length = 15.0f;  // 🔧 增加虚线长度
@@ -626,17 +644,17 @@ void ImGuiVisualizer::renderScene() {
   }
 
   // 🎨 0.5. 绘制 ESDF 地图（可选，在占据栅格之后）
-  static int esdf_viz_log_count = 0;
+  // static int esdf_viz_log_count = 0;
   if (viz_options_.show_esdf_map && esdf_map_) {
     const auto& esdf = *esdf_map_;
     const auto& cfg = esdf.config;
 
     // 调试信息（每 60 帧打印一次）
-    if (esdf_viz_log_count++ % 60 == 0) {
-      std::cout << "[Viz] Drawing ESDF map: " << cfg.width << "x" << cfg.height
-                << " @" << cfg.resolution << "m, origin=(" << cfg.origin.x << ", " << cfg.origin.y << ")"
-                << ", data_size=" << esdf.data.size() << std::endl;
-    }
+    // if (esdf_viz_log_count++ % 60 == 0) {
+    //   std::cout << "[Viz] Drawing ESDF map: " << cfg.width << "x" << cfg.height
+    //             << " @" << cfg.resolution << "m, origin=(" << cfg.origin.x << ", " << cfg.origin.y << ")"
+    //             << ", data_size=" << esdf.data.size() << std::endl;
+    // }
 
     // 绘制 ESDF 边界框（青色虚线）
     double esdf_min_x = cfg.origin.x;
@@ -847,15 +865,15 @@ void ImGuiVisualizer::renderScene() {
   // 🎨 1. 绘制 BEV 障碍物 - 圆形（可选）
   static int obstacle_log_count = 0;
   if (viz_options_.show_bev_obstacles) {
-    if (obstacle_log_count++ % 60 == 0 && !bev_obstacles_.circles.empty()) {
-      std::cout << "[Viz]   Drawing " << bev_obstacles_.circles.size() << " BEV circles" << std::endl;
-    auto test_center = worldToScreen(bev_obstacles_.circles[0].center);
-    std::cout << "[Viz]     First circle: world=(" << bev_obstacles_.circles[0].center.x
-              << ", " << bev_obstacles_.circles[0].center.y
-              << ") -> screen=(" << test_center.x << ", " << test_center.y << ")" << std::endl;
-  }
+    // if (obstacle_log_count++ % 60 == 0 && !bev_obstacles_.circles.empty()) {
+    //   std::cout << "[Viz]   Drawing " << bev_obstacles_.circles.size() << " BEV circles" << std::endl;
+    //   auto test_center = worldToScreen(bev_obstacles_.circles[0].center);
+    //   std::cout << "[Viz]     First circle: world=(" << bev_obstacles_.circles[0].center.x
+    //             << ", " << bev_obstacles_.circles[0].center.y
+    //             << ") -> screen=(" << test_center.x << ", " << test_center.y << ")" << std::endl;
+    // }
 
-  for (const auto& circle : bev_obstacles_.circles) {
+    for (const auto& circle : bev_obstacles_.circles) {
     auto center = worldToScreen(circle.center);
     float radius = circle.radius * config_.pixels_per_meter * view_state_.zoom;
     draw_list->AddCircleFilled(
@@ -933,10 +951,10 @@ void ImGuiVisualizer::renderScene() {
   }
 
   // 3. 绘制 BEV 障碍物 - 多边形
-  if (obstacle_log_count % 60 == 0 && !bev_obstacles_.polygons.empty()) {
-    std::cout << "[Viz]   Drawing " << bev_obstacles_.polygons.size() << " BEV polygons" << std::endl;
-    std::cout << "[Viz]     First polygon: " << bev_obstacles_.polygons[0].vertices.size() << " vertices" << std::endl;
-  }
+  // if (obstacle_log_count % 60 == 0 && !bev_obstacles_.polygons.empty()) {
+  //   std::cout << "[Viz]   Drawing " << bev_obstacles_.polygons.size() << " BEV polygons" << std::endl;
+  //   std::cout << "[Viz]     First polygon: " << bev_obstacles_.polygons[0].vertices.size() << " vertices" << std::endl;
+  // }
 
   for (const auto& poly : bev_obstacles_.polygons) {
     if (poly.vertices.empty()) continue;
@@ -1014,15 +1032,15 @@ void ImGuiVisualizer::renderScene() {
       float h = dyn_obs.length * config_.pixels_per_meter * view_state_.zoom;
       float yaw = dyn_obs.current_pose.yaw;
 
-      if (dyn_obs_log_count % 60 == 0) {
-        std::cout << "[Viz]       Dyn obs (rect) visualization:" << std::endl;
-        std::cout << "[Viz]         dyn_obs.width = " << dyn_obs.width << " m" << std::endl;
-        std::cout << "[Viz]         dyn_obs.length = " << dyn_obs.length << " m" << std::endl;
-        std::cout << "[Viz]         dyn_obs.current_pose.yaw = " << yaw << " rad" << std::endl;
-        std::cout << "[Viz]         Screen size: w=" << w << " px, h=" << h << " px" << std::endl;
-        std::cout << "[Viz]         Velocity: vx=" << dyn_obs.current_twist.vx
-                  << ", vy=" << dyn_obs.current_twist.vy << std::endl;
-      }
+      // if (dyn_obs_log_count % 60 == 0) {
+      //   std::cout << "[Viz]       Dyn obs (rect) visualization:" << std::endl;
+      //   std::cout << "[Viz]         dyn_obs.width = " << dyn_obs.width << " m" << std::endl;
+      //   std::cout << "[Viz]         dyn_obs.length = " << dyn_obs.length << " m" << std::endl;
+      //   std::cout << "[Viz]         dyn_obs.current_pose.yaw = " << yaw << " rad" << std::endl;
+      //   std::cout << "[Viz]         Screen size: w=" << w << " px, h=" << h << " px" << std::endl;
+      //   std::cout << "[Viz]         Velocity: vx=" << dyn_obs.current_twist.vx
+      //             << ", vy=" << dyn_obs.current_twist.vy << std::endl;
+      // }
 
       // 计算矩形的四个顶点（相对于中心）
       float half_w = w / 2.0f;
@@ -1082,10 +1100,10 @@ void ImGuiVisualizer::renderScene() {
 
   // 🎨 4.5 绘制调试路径（多阶段显示）
   if (!debug_paths_.empty() && viz_options_.show_debug_paths) {
-    static int debug_log_count = 0;
-    if (debug_log_count++ % 60 == 0) {
-      std::cout << "[Viz]   Drawing " << debug_paths_.size() << " debug paths" << std::endl;
-    }
+    // static int debug_log_count = 0;
+    // if (debug_log_count++ % 60 == 0) {
+    //   std::cout << "[Viz]   Drawing " << debug_paths_.size() << " debug paths" << std::endl;
+    // }
 
     // 定义颜色映射和开关状态
     std::vector<ImU32> path_colors = {
@@ -1097,7 +1115,10 @@ void ImGuiVisualizer::renderScene() {
     std::vector<bool> path_enabled = {
       viz_options_.show_raw_jps_path,
       viz_options_.show_optimized_path,
-      viz_options_.show_sample_trajectory
+      viz_options_.show_sample_trajectory,
+      viz_options_.show_minco_trajectory,
+      viz_options_.show_minco_stage1_trajectory,
+      viz_options_.show_minco_stage2_trajectory
     };
 
     for (size_t path_idx = 0; path_idx < debug_paths_.size(); ++path_idx) {
@@ -1127,14 +1148,14 @@ void ImGuiVisualizer::renderScene() {
 
   // 🎨 5. 绘制规划轨迹（可选）
   if (viz_options_.show_trajectory) {
-    static int traj_log_count = 0;
-    if (traj_log_count++ % 60 == 0 && trajectory_.size() > 1) {
-      std::cout << "[Viz]   Drawing trajectory with " << trajectory_.size() << " points" << std::endl;
-    auto test_p1 = worldToScreen(trajectory_[0].pose.x, trajectory_[0].pose.y);
-    auto test_p2 = worldToScreen(trajectory_[1].pose.x, trajectory_[1].pose.y);
-    std::cout << "[Viz]     First segment: (" << test_p1.x << "," << test_p1.y
-              << ") -> (" << test_p2.x << "," << test_p2.y << ")" << std::endl;
-  }
+    // static int traj_log_count = 0;
+    // if (traj_log_count++ % 60 == 0 && trajectory_.size() > 1) {
+    //   std::cout << "[Viz]   Drawing trajectory with " << trajectory_.size() << " points" << std::endl;
+    //   auto test_p1 = worldToScreen(trajectory_[0].pose.x, trajectory_[0].pose.y);
+    //   auto test_p2 = worldToScreen(trajectory_[1].pose.x, trajectory_[1].pose.y);
+    //   std::cout << "[Viz]     First segment: (" << test_p1.x << "," << test_p1.y
+    //             << ") -> (" << test_p2.x << "," << test_p2.y << ")" << std::endl;
+    // }
 
     if (trajectory_.size() > 1) {
       for (size_t i = 1; i < trajectory_.size(); ++i) {
@@ -1426,7 +1447,7 @@ void ImGuiVisualizer::renderScene() {
         // 退出目标点设置模式
         setGoalSettingMode(false);
 
-        std::cout << "[ImGuiVisualizer] New goal set at: (" << world_x << ", " << world_y << ")" << std::endl;
+        // std::cout << "[ImGuiVisualizer] New goal set at: (" << world_x << ", " << world_y << ")" << std::endl;
       }
     }
   }
@@ -1538,7 +1559,7 @@ bool ImGuiVisualizer::shouldClose() const {
 void ImGuiVisualizer::shutdown() {
   if (!initialized_) return;
 
-  std::cout << "[ImGuiVisualizer] Shutting down..." << std::endl;
+  // std::cout << "[ImGuiVisualizer] Shutting down..." << std::endl;
 
   // 清理 ImGui
   ImGui_ImplSDLRenderer2_Shutdown();
@@ -1640,6 +1661,18 @@ void ImGuiVisualizer::renderLegendPanel() {
     ImGui::Checkbox("Sample Trajectory", &viz_options_.show_sample_trajectory);
     ImGui::SameLine();
     ImGui::TextColored(ImVec4(0.4f, 0.4f, 1.0f, 1.0f), "[Blue - Sampled Path]");
+
+    ImGui::Checkbox("MINCO Final Trajectory", &viz_options_.show_minco_trajectory);
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(1.0f, 0.0f, 1.0f, 1.0f), "[Magenta - Final Result]");
+
+    ImGui::Checkbox("MINCO Stage 1 (Preprocessing)", &viz_options_.show_minco_stage1_trajectory);
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "[Orange - After Preprocessing]");
+
+    ImGui::Checkbox("MINCO Stage 2 (Main Opt)", &viz_options_.show_minco_stage2_trajectory);
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "[Cyan - After Main Optimization]");
   }
   ImGui::Unindent();
 
@@ -1697,8 +1730,8 @@ void ImGuiVisualizer::renderLegendPanel() {
   ImGui::Separator();
   ImGui::Text("View Options:");
   if (ImGui::Checkbox("Follow Ego Vehicle", &view_state_.follow_ego)) {
-    std::cout << "[ImGuiVisualizer] Follow ego: "
-              << (view_state_.follow_ego ? "ON" : "OFF") << " (toggled from Legend panel)" << std::endl;
+    // std::cout << "[ImGuiVisualizer] Follow ego: "
+    //           << (view_state_.follow_ego ? "ON" : "OFF") << " (toggled from Legend panel)" << std::endl;
   }
   ImGui::SameLine();
   ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "(F key)");
@@ -1726,11 +1759,11 @@ void ImGuiVisualizer::renderLegendPanel() {
     double zoom_y = (canvas_size.y * 0.9) / (grid_height * config_.pixels_per_meter);
     view_state_.zoom = std::min(zoom_x, zoom_y);
 
-    std::cout << "[ImGuiVisualizer] Fit occupancy grid:" << std::endl;
-    std::cout << "  - Grid center: (" << grid_center_x << ", " << grid_center_y << ")" << std::endl;
-    std::cout << "  - Grid size: " << grid_width << " x " << grid_height << " m" << std::endl;
-    std::cout << "  - Canvas size: " << canvas_size.x << " x " << canvas_size.y << " px" << std::endl;
-    std::cout << "  - New zoom: " << view_state_.zoom << std::endl;
+    // std::cout << "[ImGuiVisualizer] Fit occupancy grid:" << std::endl;
+    // std::cout << "  - Grid center: (" << grid_center_x << ", " << grid_center_y << ")" << std::endl;
+    // std::cout << "  - Grid size: " << grid_width << " x " << grid_height << " m" << std::endl;
+    // std::cout << "  - Canvas size: " << canvas_size.x << " x " << canvas_size.y << " px" << std::endl;
+    // std::cout << "  - New zoom: " << view_state_.zoom << std::endl;
   }
   if (!occupancy_grid_) {
     ImGui::BeginDisabled();
@@ -1751,6 +1784,9 @@ void ImGuiVisualizer::renderLegendPanel() {
     viz_options_.show_raw_jps_path = true;
     viz_options_.show_optimized_path = true;
     viz_options_.show_sample_trajectory = true;
+    viz_options_.show_minco_trajectory = true;
+    viz_options_.show_minco_stage1_trajectory = true;
+    viz_options_.show_minco_stage2_trajectory = true;
     viz_options_.show_bev_obstacles = true;
     viz_options_.show_dynamic_obstacles = true;
     viz_options_.show_occupancy_grid = true;
@@ -1766,6 +1802,9 @@ void ImGuiVisualizer::renderLegendPanel() {
     viz_options_.show_raw_jps_path = false;
     viz_options_.show_optimized_path = false;
     viz_options_.show_sample_trajectory = false;
+    viz_options_.show_minco_trajectory = false;
+    viz_options_.show_minco_stage1_trajectory = false;
+    viz_options_.show_minco_stage2_trajectory = false;
     viz_options_.show_bev_obstacles = false;
     viz_options_.show_dynamic_obstacles = false;
     viz_options_.show_occupancy_grid = false;
@@ -1815,11 +1854,11 @@ bool ImGuiVisualizer::hasNewGoal(planning::Pose2d& new_goal) {
 
 void ImGuiVisualizer::setGoalSettingMode(bool enable) {
   goal_setting_mode_ = enable;
-  if (enable) {
-    std::cout << "[ImGuiVisualizer] Goal setting mode enabled. Click on the scene to set new goal." << std::endl;
-  } else {
-    std::cout << "[ImGuiVisualizer] Goal setting mode disabled." << std::endl;
-  }
+  // if (enable) {
+  //   std::cout << "[ImGuiVisualizer] Goal setting mode enabled. Click on the scene to set new goal." << std::endl;
+  // } else {
+  //   std::cout << "[ImGuiVisualizer] Goal setting mode disabled." << std::endl;
+  // }
 }
 
 } // namespace viz

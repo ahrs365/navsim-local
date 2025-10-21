@@ -119,10 +119,13 @@ private:
     bool show_grid_lines = true;       // 显示网格线
 
     // Debug paths for JPS planner
-    bool show_debug_paths = true;      // 总开关：显示JPS调试路径
-    bool show_raw_jps_path = true;     // 显示原始JPS搜索路径（红色）
-    bool show_optimized_path = true;   // 显示优化路径（绿色）
-    bool show_sample_trajectory = true;// 显示采样轨迹（蓝色）
+    bool show_debug_paths = true;           // 总开关：显示JPS调试路径
+    bool show_raw_jps_path = true;          // 显示原始JPS搜索路径（红色）
+    bool show_optimized_path = true;        // 显示优化路径（绿色）
+    bool show_sample_trajectory = true;     // 显示采样轨迹（蓝色）
+    bool show_minco_trajectory = true;      // 显示MINCO最终轨迹（洋红色）
+    bool show_minco_stage1_trajectory = true; // 显示MINCO预处理轨迹（橙色）
+    bool show_minco_stage2_trajectory = true; // 显示MINCO主优化轨迹（青色）
   } viz_options_;
 
   // 系统信息

@@ -227,6 +227,108 @@ struct FlatTrajData {
 };
 
 // ============================================================================
+// OptimizerConfig - Configuration for trajectory optimizer
+// ============================================================================
+
+struct OptimizerConfig {
+  // Kinematic constraints
+  double max_vel = 5.0;
+  double min_vel = -5.0;
+  double max_acc = 5.0;
+  double max_omega = 1.0;
+  double max_domega = 50.0;
+  double max_centripetal_acc = 10000.0;
+  bool if_directly_constrain_v_omega = false;
+
+  // Optimizer parameters
+  double mean_time_lowBound = 0.5;
+  double mean_time_uppBound = 2.0;
+  double smoothEps = 1e-3;  // for smoothL1
+  double safeDis = 0.3;
+
+  // Final collision check parameters
+  double finalMinSafeDis = 0.2;
+  int finalSafeDisCheckNum = 10;
+  int safeReplanMaxTime = 3;
+
+  // Penalty weights
+  double time_weight = 1.0;
+  double acc_weight = 1.0;
+  double domega_weight = 1.0;
+  double collision_weight = 1.0;
+  double moment_weight = 1.0;
+  double mean_time_weight = 1.0;
+  double cen_acc_weight = 1.0;
+
+  // Path penalty weights (for pre-processing)
+  double path_time_weight = 1.0;
+  double path_bigpath_sdf_weight = 1.0;
+  double path_moment_weight = 1.0;
+  double path_mean_time_weight = 1.0;
+  double path_acc_weight = 1.0;
+  double path_domega_weight = 1.0;
+
+  // Energy weights
+  std::vector<double> energyWeights = {1.0, 1.0};
+
+  // Augmented Lagrangian parameters
+  std::vector<double> EqualLambda = {0.0, 0.0};
+  std::vector<double> EqualRho = {1.0, 1.0};
+  std::vector<double> EqualRhoMax = {100.0, 100.0};
+  std::vector<double> EqualGamma = {0.1, 0.1};
+  std::vector<double> EqualTolerance = {0.01, 0.01};
+
+  // Cut trajectory Augmented Lagrangian parameters
+  std::vector<double> CutEqualLambda = {0.0, 0.0};
+  std::vector<double> CutEqualRho = {1.0, 1.0};
+  std::vector<double> CutEqualRhoMax = {100.0, 100.0};
+  std::vector<double> CutEqualGamma = {0.1, 0.1};
+  std::vector<double> CutEqualTolerance = {0.01, 0.01};
+
+  // LBFGS parameters for path pre-processing
+  int path_lbfgs_mem_size = 16;
+  int path_lbfgs_past = 3;
+  double path_lbfgs_g_epsilon = 1e-3;
+  double path_lbfgs_min_step = 1e-32;
+  double path_lbfgs_delta = 1e-4;
+  int path_lbfgs_max_iterations = 200;
+  double path_lbfgs_shot_path_past = 1.0;
+  double path_lbfgs_shot_path_horizon = 2.0;
+
+  // LBFGS parameters for main optimization
+  int lbfgs_mem_size = 16;
+  int lbfgs_past = 3;
+  double lbfgs_g_epsilon = 1e-3;
+  double lbfgs_min_step = 1e-32;
+  double lbfgs_delta = 1e-4;
+  int lbfgs_max_iterations = 200;
+
+  // Sampling parameters
+  int sparseResolution = 10;
+  double timeResolution = 0.1;
+  int mintrajNum = 10;
+
+  // Trajectory prediction resolution
+  double trajPredictResolution = 0.1;
+
+  // Visualization
+  bool if_visual_optimization = false;
+
+  // Horizon limitation
+  bool hrz_limited = false;
+  double hrz_laser_range_dgr = 180.0;
+
+  // Checkpoint for collision detection (robot footprint)
+  std::vector<Eigen::Vector2d> checkpoint = {
+    Eigen::Vector2d(0.0, 0.0)
+  };
+
+  // ICR parameters (Instantaneous Center of Rotation)
+  Eigen::Vector3d ICR = Eigen::Vector3d(0.0, 0.0, 1.0);  // yl, yr, xv
+  bool if_standard_diff = true;
+};
+
+// ============================================================================
 // JPSConfig - Configuration for JPS planner
 // ============================================================================
 
@@ -254,6 +356,9 @@ struct JPSConfig {
 
   // JPS parameters
   double jps_truncation_time = 5.0;
+
+  // Optimizer configuration
+  OptimizerConfig optimizer;
 };
 
 }  // namespace JPS

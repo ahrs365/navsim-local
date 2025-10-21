@@ -6,6 +6,7 @@
 #include "esdf_map.hpp"
 #include "../algorithm/jps_planner.hpp"
 #include "../algorithm/jps_data_structures.hpp"
+#include "../algorithm/opt/optimizer.h"
 #include <nlohmann/json.hpp>
 #include <memory>
 #include <string>
@@ -107,10 +108,38 @@ private:
   bool convertJPSOutputToResult(const JPS::JPSPlanner& jps_planner,
                                  navsim::plugin::PlanningResult& result) const;
 
+  /**
+   * @brief Extract MINCO optimized trajectory points for visualization
+   * @return Vector of poses representing the MINCO trajectory
+   */
+  std::vector<navsim::planning::Pose2d> extractMincoTrajectory() const;
+
+  /**
+   * @brief Extract preprocessing trajectory (before main optimization)
+   * @return Vector of poses representing the preprocessing trajectory
+   */
+  std::vector<navsim::planning::Pose2d> extractPreprocessingTrajectory() const;
+
+  /**
+   * @brief Extract main optimization trajectory (after main optimization)
+   * @return Vector of poses representing the main optimization trajectory
+   */
+  std::vector<navsim::planning::Pose2d> extractMainOptimizationTrajectory() const;
+
+  /**
+   * @brief Convert MINCO output to PlanningResult format
+   * @param result Output planning result
+   * @return true if conversion succeeded
+   */
+  bool convertMincoOutputToResult(navsim::plugin::PlanningResult& result) const;
+
   // ========== Member Variables ==========
 
   // Core algorithm object
   std::unique_ptr<JPS::JPSPlanner> jps_planner_;
+
+  // Trajectory optimizer
+  std::shared_ptr<JPS::MSPlanner> msplanner_;
 
   // ESDFMap (from PlanningContext)
   std::shared_ptr<navsim::perception::ESDFMap> esdf_map_;
@@ -120,6 +149,9 @@ private:
 
   // Plugin state
   bool initialized_ = false;
+
+  // Trajectory total time (from optimizer)
+  double Traj_total_time_ = 0.0;
 
   // Statistics
   mutable int total_plans_ = 0;

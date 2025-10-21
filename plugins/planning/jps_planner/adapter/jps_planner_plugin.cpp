@@ -148,6 +148,17 @@ bool JpsPlannerPlugin::plan(const navsim::planning::PlanningContext& context,
     }
   }
 
+  // Create or update MSPlanner (trajectory optimizer)
+  if (!msplanner_) {
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] Creating MSPlanner (trajectory optimizer)..." << std::endl;
+    }
+    msplanner_ = std::make_shared<JPS::MSPlanner>(jps_config_.optimizer, esdf_map_);
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] MSPlanner created successfully" << std::endl;
+    }
+  }
+
   // Convert PlanningContext to JPS input
   Eigen::Vector3d start, goal;
   if (!convertContextToJPSInput(context, start, goal)) {
@@ -166,6 +177,33 @@ bool JpsPlannerPlugin::plan(const navsim::planning::PlanningContext& context,
 
   // Call JPS planner
   bool success = jps_planner_->plan(start, goal);
+  if(!success) {
+    std::cerr << "[JPSPlannerPlugin] JPS planning failed!" << std::endl;
+    result.success = false;
+    result.failure_reason = "JPS planning failed";
+    failed_plans_++;
+    return false;
+  } 
+
+  // Trajectory optimization
+  if (verbose_) {
+    std::cout << "[JPSPlannerPlugin] Running trajectory optimization..." << std::endl;
+  }
+
+  bool optimize_result = msplanner_->minco_plan(jps_planner_->flat_traj_);
+  std::string optimization_status;
+  if(!optimize_result) {
+    std::cerr << "[JPSPlannerPlugin] Optimization failed!" << std::endl;
+    optimization_status = "Optimization failed - using JPS path only";
+  } else {
+    // Get trajectory total time
+    Traj_total_time_ = msplanner_->final_traj_.getTotalDuration();
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] Optimization succeeded! Total time: " << Traj_total_time_ << " s" << std::endl;
+    }
+    optimization_status = "Optimization succeeded";
+  }
+
 
   if (verbose_) {
     std::cout << "[JPSPlannerPlugin] jps_planner_->plan() returned: " << success << std::endl;
@@ -229,13 +267,24 @@ bool JpsPlannerPlugin::plan(const navsim::planning::PlanningContext& context,
     return false;
   }
 
-  // Convert JPS output to PlanningResult
-  if (!convertJPSOutputToResult(*jps_planner_, result)) {
-    std::cerr << "[JPSPlannerPlugin] Failed to convert JPS output to result!" << std::endl;
-    result.success = false;
-    result.failure_reason = "Failed to convert JPS output";
-    failed_plans_++;
-    return false;
+  // Convert to PlanningResult
+  // If optimization succeeded, use MINCO trajectory; otherwise use JPS trajectory
+  if (optimize_result) {
+    if (!convertMincoOutputToResult(result)) {
+      std::cerr << "[JPSPlannerPlugin] Failed to convert MINCO output to result!" << std::endl;
+      result.success = false;
+      result.failure_reason = "Failed to convert MINCO output";
+      failed_plans_++;
+      return false;
+    }
+  } else {
+    if (!convertJPSOutputToResult(*jps_planner_, result)) {
+      std::cerr << "[JPSPlannerPlugin] Failed to convert JPS output to result!" << std::endl;
+      result.success = false;
+      result.failure_reason = "Failed to convert JPS output";
+      failed_plans_++;
+      return false;
+    }
   }
 
   // Update statistics
@@ -243,24 +292,39 @@ bool JpsPlannerPlugin::plan(const navsim::planning::PlanningContext& context,
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
   double planning_time_ms = duration.count() / 1000.0;
   total_planning_time_ms_ += planning_time_ms;
-  successful_plans_++;
 
-  result.success = true;
+  // Set result based on optimization status
+  result.success = optimize_result;  // Success only if optimization succeeded
   result.planner_name = "JPSPlanner";
   result.computation_time_ms = planning_time_ms;
+  result.failure_reason = optimize_result ? "" : optimization_status;
+
+  if (optimize_result) {
+    successful_plans_++;
+  } else {
+    failed_plans_++;
+  }
 
   if (verbose_) {
-    std::cout << "[JPSPlannerPlugin] Planning succeeded! Trajectory length: "
-              << result.trajectory.size() << " points, time: " << planning_time_ms << " ms" << std::endl;
+    std::cout << "[JPSPlannerPlugin] Planning " << (optimize_result ? "succeeded" : "partially succeeded (JPS only)")
+              << "! Trajectory length: " << result.trajectory.size() << " points, time: "
+              << planning_time_ms << " ms" << std::endl;
+    std::cout << "[JPSPlannerPlugin] Status: " << optimization_status << std::endl;
   }
 
   // Store debug paths in result for visualization
   result.metadata["has_debug_paths"] = 1.0;
+  result.metadata["optimization_success"] = optimize_result ? 1.0 : 0.0;
 
   // Store debug paths using a global variable (temporary solution)
   // TODO: Improve this by using proper data structure in PlanningResult
   static std::vector<std::vector<navsim::planning::Pose2d>> global_debug_paths;
   global_debug_paths.clear();
+
+  if (verbose_) {
+    std::cout << "[JPSPlannerPlugin] Preparing debug paths for visualization..." << std::endl;
+    std::cout << "[JPSPlannerPlugin] Optimization status: " << optimization_status << std::endl;
+  }
 
   // Collect Raw JPS path
   const auto& raw_path = jps_planner_->getRawPath();
@@ -300,6 +364,51 @@ bool JpsPlannerPlugin::plan(const navsim::planning::PlanningContext& context,
   }
   global_debug_paths.push_back(sample_poses);
 
+  // Collect MINCO optimized trajectory (even if optimization failed, we can still visualize the attempt)
+  if (msplanner_) {
+    std::vector<navsim::planning::Pose2d> minco_poses = extractMincoTrajectory();
+    if (!minco_poses.empty()) {
+      global_debug_paths.push_back(minco_poses);
+      if (verbose_) {
+        std::cout << "[JPSPlannerPlugin] === PATH 5: MINCO final trajectory size: " << minco_poses.size() << std::endl;
+        if (!minco_poses.empty()) {
+          std::cout << "  First point: (" << minco_poses[0].x << ", " << minco_poses[0].y << ")" << std::endl;
+          std::cout << "  Last point: (" << minco_poses.back().x << ", " << minco_poses.back().y << ")" << std::endl;
+        }
+      }
+    } else if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] === PATH 5: MINCO trajectory extraction failed (empty trajectory)" << std::endl;
+    }
+
+    // Collect preprocessing trajectory (Stage 1)
+    std::vector<navsim::planning::Pose2d> preprocessing_poses = extractPreprocessingTrajectory();
+    if (!preprocessing_poses.empty()) {
+      global_debug_paths.push_back(preprocessing_poses);
+      if (verbose_) {
+        std::cout << "[JPSPlannerPlugin] === PATH 6: MINCO preprocessing trajectory (Stage 1) size: "
+                  << preprocessing_poses.size() << std::endl;
+        if (!preprocessing_poses.empty()) {
+          std::cout << "  First point: (" << preprocessing_poses[0].x << ", " << preprocessing_poses[0].y << ")" << std::endl;
+          std::cout << "  Last point: (" << preprocessing_poses.back().x << ", " << preprocessing_poses.back().y << ")" << std::endl;
+        }
+      }
+    }
+
+    // Collect main optimization trajectory (Stage 2)
+    std::vector<navsim::planning::Pose2d> optimization_poses = extractMainOptimizationTrajectory();
+    if (!optimization_poses.empty()) {
+      global_debug_paths.push_back(optimization_poses);
+      if (verbose_) {
+        std::cout << "[JPSPlannerPlugin] === PATH 7: MINCO main optimization trajectory (Stage 2) size: "
+                  << optimization_poses.size() << std::endl;
+        if (!optimization_poses.empty()) {
+          std::cout << "  First point: (" << optimization_poses[0].x << ", " << optimization_poses[0].y << ")" << std::endl;
+          std::cout << "  Last point: (" << optimization_poses.back().x << ", " << optimization_poses.back().y << ")" << std::endl;
+        }
+      }
+    }
+  }
+
   // Store a way for the main app to access this data
   result.metadata["debug_paths_ptr"] = static_cast<double>(reinterpret_cast<uintptr_t>(&global_debug_paths));
 
@@ -326,6 +435,129 @@ bool JpsPlannerPlugin::loadConfig(const json& config) {
     jps_config_.sample_time = config.value("sample_time", 0.1);
     jps_config_.min_traj_num = config.value("min_traj_num", 10);
     jps_config_.jps_truncation_time = config.value("jps_truncation_time", 5.0);
+
+    // Load optimizer configuration
+    if (config.contains("optimizer")) {
+      const auto& opt_config = config["optimizer"];
+
+      // Kinematic constraints
+      jps_config_.optimizer.max_vel = opt_config.value("max_vel", 5.0);
+      jps_config_.optimizer.min_vel = opt_config.value("min_vel", -5.0);
+      jps_config_.optimizer.max_acc = opt_config.value("max_acc", 5.0);
+      jps_config_.optimizer.max_omega = opt_config.value("max_omega", 1.0);
+      jps_config_.optimizer.max_domega = opt_config.value("max_domega", 50.0);
+      jps_config_.optimizer.max_centripetal_acc = opt_config.value("max_centripetal_acc", 10000.0);
+      jps_config_.optimizer.if_directly_constrain_v_omega = opt_config.value("if_directly_constrain_v_omega", false);
+
+      // Optimizer parameters
+      jps_config_.optimizer.mean_time_lowBound = opt_config.value("mean_time_lowBound", 0.5);
+      jps_config_.optimizer.mean_time_uppBound = opt_config.value("mean_time_uppBound", 2.0);
+      jps_config_.optimizer.smoothEps = opt_config.value("smoothEps", 0.01);
+      jps_config_.optimizer.safeDis = opt_config.value("safeDis", 0.3);
+
+      // Final collision check parameters
+      jps_config_.optimizer.finalMinSafeDis = opt_config.value("finalMinSafeDis", 0.1);
+      jps_config_.optimizer.finalSafeDisCheckNum = opt_config.value("finalSafeDisCheckNum", 16);
+      jps_config_.optimizer.safeReplanMaxTime = opt_config.value("safeReplanMaxTime", 3);
+
+      // Penalty weights
+      jps_config_.optimizer.time_weight = opt_config.value("time_weight", 50.0);
+      jps_config_.optimizer.acc_weight = opt_config.value("acc_weight", 300.0);
+      jps_config_.optimizer.domega_weight = opt_config.value("domega_weight", 300.0);
+      jps_config_.optimizer.collision_weight = opt_config.value("collision_weight", 500000.0);
+      jps_config_.optimizer.moment_weight = opt_config.value("moment_weight", 300.0);
+      jps_config_.optimizer.mean_time_weight = opt_config.value("mean_time_weight", 300.0);
+      jps_config_.optimizer.cen_acc_weight = opt_config.value("cen_acc_weight", 300.0);
+
+      // Path penalty weights
+      jps_config_.optimizer.path_time_weight = opt_config.value("path_time_weight", 20.0);
+      jps_config_.optimizer.path_bigpath_sdf_weight = opt_config.value("path_bigpath_sdf_weight", 200000.0);
+      jps_config_.optimizer.path_moment_weight = opt_config.value("path_moment_weight", 1000.0);
+      jps_config_.optimizer.path_mean_time_weight = opt_config.value("path_mean_time_weight", 100.0);
+      jps_config_.optimizer.path_acc_weight = opt_config.value("path_acc_weight", 100.0);
+      jps_config_.optimizer.path_domega_weight = opt_config.value("path_domega_weight", 100.0);
+
+      // Energy weights
+      if (opt_config.contains("energyWeights") && opt_config["energyWeights"].is_array()) {
+        jps_config_.optimizer.energyWeights = opt_config["energyWeights"].get<std::vector<double>>();
+      }
+
+      // Augmented Lagrangian parameters
+      if (opt_config.contains("EqualLambda") && opt_config["EqualLambda"].is_array()) {
+        jps_config_.optimizer.EqualLambda = opt_config["EqualLambda"].get<std::vector<double>>();
+      }
+      if (opt_config.contains("EqualRho") && opt_config["EqualRho"].is_array()) {
+        jps_config_.optimizer.EqualRho = opt_config["EqualRho"].get<std::vector<double>>();
+      }
+      if (opt_config.contains("EqualRhoMax") && opt_config["EqualRhoMax"].is_array()) {
+        jps_config_.optimizer.EqualRhoMax = opt_config["EqualRhoMax"].get<std::vector<double>>();
+      }
+      if (opt_config.contains("EqualGamma") && opt_config["EqualGamma"].is_array()) {
+        jps_config_.optimizer.EqualGamma = opt_config["EqualGamma"].get<std::vector<double>>();
+      }
+      if (opt_config.contains("EqualTolerance") && opt_config["EqualTolerance"].is_array()) {
+        jps_config_.optimizer.EqualTolerance = opt_config["EqualTolerance"].get<std::vector<double>>();
+      }
+
+      // Cut trajectory Augmented Lagrangian parameters
+      if (opt_config.contains("CutEqualLambda") && opt_config["CutEqualLambda"].is_array()) {
+        jps_config_.optimizer.CutEqualLambda = opt_config["CutEqualLambda"].get<std::vector<double>>();
+      }
+      if (opt_config.contains("CutEqualRho") && opt_config["CutEqualRho"].is_array()) {
+        jps_config_.optimizer.CutEqualRho = opt_config["CutEqualRho"].get<std::vector<double>>();
+      }
+      if (opt_config.contains("CutEqualRhoMax") && opt_config["CutEqualRhoMax"].is_array()) {
+        jps_config_.optimizer.CutEqualRhoMax = opt_config["CutEqualRhoMax"].get<std::vector<double>>();
+      }
+      if (opt_config.contains("CutEqualGamma") && opt_config["CutEqualGamma"].is_array()) {
+        jps_config_.optimizer.CutEqualGamma = opt_config["CutEqualGamma"].get<std::vector<double>>();
+      }
+      if (opt_config.contains("CutEqualTolerance") && opt_config["CutEqualTolerance"].is_array()) {
+        jps_config_.optimizer.CutEqualTolerance = opt_config["CutEqualTolerance"].get<std::vector<double>>();
+      }
+
+      // LBFGS parameters for path pre-processing
+      jps_config_.optimizer.path_lbfgs_mem_size = opt_config.value("path_lbfgs_mem_size", 256);
+      jps_config_.optimizer.path_lbfgs_past = opt_config.value("path_lbfgs_past", 2);
+      jps_config_.optimizer.path_lbfgs_g_epsilon = opt_config.value("path_lbfgs_g_epsilon", 0.0);
+      jps_config_.optimizer.path_lbfgs_min_step = opt_config.value("path_lbfgs_min_step", 0.0);
+      jps_config_.optimizer.path_lbfgs_delta = opt_config.value("path_lbfgs_delta", 0.05);
+      jps_config_.optimizer.path_lbfgs_max_iterations = opt_config.value("path_lbfgs_max_iterations", 8000);
+      jps_config_.optimizer.path_lbfgs_shot_path_past = opt_config.value("path_lbfgs_shot_path_past", 8.0);
+      jps_config_.optimizer.path_lbfgs_shot_path_horizon = opt_config.value("path_lbfgs_shot_path_horizon", 0.5);
+
+      // LBFGS parameters for main optimization
+      jps_config_.optimizer.lbfgs_mem_size = opt_config.value("lbfgs_mem_size", 256);
+      jps_config_.optimizer.lbfgs_past = opt_config.value("lbfgs_past", 3);
+      jps_config_.optimizer.lbfgs_g_epsilon = opt_config.value("lbfgs_g_epsilon", 0.0);
+      jps_config_.optimizer.lbfgs_min_step = opt_config.value("lbfgs_min_step", 1.0e-32);
+      jps_config_.optimizer.lbfgs_delta = opt_config.value("lbfgs_delta", 0.0005);
+      jps_config_.optimizer.lbfgs_max_iterations = opt_config.value("lbfgs_max_iterations", 8000);
+
+      // Sampling parameters
+      jps_config_.optimizer.sparseResolution = opt_config.value("sparseResolution", 8);
+      jps_config_.optimizer.timeResolution = opt_config.value("timeResolution", 0.4);
+      jps_config_.optimizer.mintrajNum = opt_config.value("mintrajNum", 3);
+      jps_config_.optimizer.trajPredictResolution = opt_config.value("trajPredictResolution", 0.01);
+
+      // Visualization
+      jps_config_.optimizer.if_visual_optimization = opt_config.value("if_visual_optimization", false);
+
+      // Horizon limitation
+      jps_config_.optimizer.hrz_limited = opt_config.value("hrz_limited", false);
+      jps_config_.optimizer.hrz_laser_range_dgr = opt_config.value("hrz_laser_range_dgr", 180.0);
+
+      // Standard differential drive
+      jps_config_.optimizer.if_standard_diff = opt_config.value("if_standard_diff", true);
+
+      if (verbose_) {
+        std::cout << "[JPSPlannerPlugin] Loaded optimizer configuration:" << std::endl;
+        std::cout << "  - Optimizer max_vel: " << jps_config_.optimizer.max_vel << " m/s" << std::endl;
+        std::cout << "  - Optimizer max_acc: " << jps_config_.optimizer.max_acc << " m/s^2" << std::endl;
+        std::cout << "  - Optimizer max_omega: " << jps_config_.optimizer.max_omega << " rad/s" << std::endl;
+        std::cout << "  - Collision weight: " << jps_config_.optimizer.collision_weight << std::endl;
+      }
+    }
 
     // Load plugin configuration
     verbose_ = true;  // Force enable for testing debug paths
@@ -377,6 +609,291 @@ bool JpsPlannerPlugin::convertContextToJPSInput(const navsim::planning::Planning
   goal.x() = context.task.goal_pose.x;
   goal.y() = context.task.goal_pose.y;
   goal.z() = context.task.goal_pose.yaw;
+
+  return true;
+}
+
+std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractMincoTrajectory() const {
+  std::vector<navsim::planning::Pose2d> minco_poses;
+
+  if (!msplanner_) {
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] extractMincoTrajectory: msplanner_ is null" << std::endl;
+    }
+    return minco_poses;
+  }
+
+  const auto& final_traj = msplanner_->final_traj_;
+
+  // Check if trajectory has pieces
+  int TrajNum = final_traj.getPieceNum();
+  if (TrajNum <= 0) {
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] extractMincoTrajectory: final_traj has no pieces" << std::endl;
+    }
+    return minco_poses;
+  }
+
+  // Get start state from JPS planner
+  const auto& flat_traj = jps_planner_->getFlatTraj();
+  if (flat_traj.UnOccupied_positions.empty()) {
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] extractMincoTrajectory: UnOccupied_positions is empty" << std::endl;
+    }
+    return minco_poses;
+  }
+
+  double ini_x = flat_traj.UnOccupied_positions[0].x();
+  double ini_y = flat_traj.UnOccupied_positions[0].y();
+
+  if (verbose_) {
+    std::cout << "[JPSPlannerPlugin] extractMincoTrajectory: Starting extraction with "
+              << TrajNum << " pieces, start=(" << ini_x << ", " << ini_y << ")" << std::endl;
+  }
+
+  // Extract trajectory using Simpson's rule integration (same as ROS version)
+  int K = 50;  // Sampling resolution
+  int SamNumEachPart = 2 * K;
+  double sumT = 0.0;
+
+  Eigen::VectorXd pieceTime = final_traj.getDurations();
+
+  Eigen::Vector2d pos(ini_x, ini_y);
+
+  for(int i = 0; i < TrajNum; i++) {
+    double step = pieceTime[i] / K;
+    double halfstep = step / 2.0;
+    double CoeffIntegral = pieceTime[i] / K / 6.0;
+
+    Eigen::VectorXd IntegralX(K);
+    IntegralX.setZero();
+    Eigen::VectorXd IntegralY(K);
+    IntegralY.setZero();
+    Eigen::VectorXd Yaw(K);
+    Yaw.setZero();
+
+    double s1 = 0.0;
+    for(int j = 0; j <= SamNumEachPart; j++) {
+      if(j % 2 == 0) {
+        Eigen::Vector2d currPos = final_traj.getPos(s1 + sumT);
+        Eigen::Vector2d currVel = final_traj.getVel(s1 + sumT);
+        s1 += halfstep;
+
+        if(j != 0) {
+          IntegralX[j/2-1] += CoeffIntegral * currVel.y() * cos(currPos.x());
+          IntegralY[j/2-1] += CoeffIntegral * currVel.y() * sin(currPos.x());
+          Yaw[j/2-1] = currPos.x();
+        }
+        if(j != SamNumEachPart) {
+          IntegralX[j/2] += CoeffIntegral * currVel.y() * cos(currPos.x());
+          IntegralY[j/2] += CoeffIntegral * currVel.y() * sin(currPos.x());
+        }
+      }
+      else {
+        Eigen::Vector2d currPos = final_traj.getPos(s1 + sumT);
+        Eigen::Vector2d currVel = final_traj.getVel(s1 + sumT);
+        s1 += halfstep;
+
+        IntegralX[j/2] += 4.0 * CoeffIntegral * currVel.y() * cos(currPos.x());
+        IntegralY[j/2] += 4.0 * CoeffIntegral * currVel.y() * sin(currPos.x());
+      }
+    }
+
+    // Add points for this piece
+    for(int j = 0; j < K; j++) {
+      pos.x() += IntegralX[j];
+      pos.y() += IntegralY[j];
+
+      navsim::planning::Pose2d pose;
+      pose.x = pos.x();
+      pose.y = pos.y();
+      pose.yaw = Yaw[j];
+      minco_poses.push_back(pose);
+    }
+
+    sumT += pieceTime[i];
+  }
+
+  return minco_poses;
+}
+
+std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractPreprocessingTrajectory() const {
+  std::vector<navsim::planning::Pose2d> preprocessing_poses;
+
+  if (!msplanner_) {
+    return preprocessing_poses;
+  }
+
+  // Extract from init_final_traj_ (preprocessing result, before main optimization)
+  const auto& traj = msplanner_->init_final_traj_;
+  int TrajNum = traj.getPieceNum();
+
+  if (TrajNum == 0) {
+    return preprocessing_poses;
+  }
+
+  Eigen::VectorXd pieceTime = traj.getDurations();
+
+  int K = 50;  // Samples per piece
+  double sumT = 0.0;
+  Eigen::Vector2d pos(0.0, 0.0);  // Start from origin
+
+  for (int i = 0; i < TrajNum; i++) {
+    std::vector<double> Yaw(K);
+    std::vector<double> IntegralX(K);
+    std::vector<double> IntegralY(K);
+
+    for (int j = 0; j < K; j++) {
+      double s1 = sumT + pieceTime[i] * j / K;
+      Eigen::Vector2d currPos = traj.getPos(s1);
+      Eigen::Vector2d currVel = traj.getVel(s1);
+
+      Yaw[j] = currPos.x();
+      double CoeffIntegral = pieceTime[i] / K;
+
+      if (j == 0 || j == K - 1) {
+        IntegralX[j] = CoeffIntegral * currVel.y() * cos(currPos.x());
+        IntegralY[j] = CoeffIntegral * currVel.y() * sin(currPos.x());
+      } else if (j % 2 == 1) {
+        IntegralX[j] = 4.0 * CoeffIntegral * currVel.y() * cos(currPos.x());
+        IntegralY[j] = 4.0 * CoeffIntegral * currVel.y() * sin(currPos.x());
+      } else {
+        IntegralX[j / 2] += 4.0 * CoeffIntegral * currVel.y() * cos(currPos.x());
+        IntegralY[j / 2] += 4.0 * CoeffIntegral * currVel.y() * sin(currPos.x());
+      }
+    }
+
+    for (int j = 0; j < K; j++) {
+      pos.x() += IntegralX[j];
+      pos.y() += IntegralY[j];
+
+      navsim::planning::Pose2d pose;
+      pose.x = pos.x();
+      pose.y = pos.y();
+      pose.yaw = Yaw[j];
+      preprocessing_poses.push_back(pose);
+    }
+
+    sumT += pieceTime[i];
+  }
+
+  return preprocessing_poses;
+}
+
+std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractMainOptimizationTrajectory() const {
+  std::vector<navsim::planning::Pose2d> optimization_poses;
+
+  if (!msplanner_) {
+    return optimization_poses;
+  }
+
+  // Extract from optimizer_traj_ (main optimization result, before collision check)
+  const auto& traj = msplanner_->optimizer_traj_;
+  int TrajNum = traj.getPieceNum();
+
+  if (TrajNum == 0) {
+    return optimization_poses;
+  }
+
+  Eigen::VectorXd pieceTime = traj.getDurations();
+
+  int K = 50;  // Samples per piece
+  double sumT = 0.0;
+  Eigen::Vector2d pos(0.0, 0.0);  // Start from origin
+
+  for (int i = 0; i < TrajNum; i++) {
+    std::vector<double> Yaw(K);
+    std::vector<double> IntegralX(K);
+    std::vector<double> IntegralY(K);
+
+    for (int j = 0; j < K; j++) {
+      double s1 = sumT + pieceTime[i] * j / K;
+      Eigen::Vector2d currPos = traj.getPos(s1);
+      Eigen::Vector2d currVel = traj.getVel(s1);
+
+      Yaw[j] = currPos.x();
+      double CoeffIntegral = pieceTime[i] / K;
+
+      if (j == 0 || j == K - 1) {
+        IntegralX[j] = CoeffIntegral * currVel.y() * cos(currPos.x());
+        IntegralY[j] = CoeffIntegral * currVel.y() * sin(currPos.x());
+      } else if (j % 2 == 1) {
+        IntegralX[j] = 4.0 * CoeffIntegral * currVel.y() * cos(currPos.x());
+        IntegralY[j] = 4.0 * CoeffIntegral * currVel.y() * sin(currPos.x());
+      } else {
+        IntegralX[j / 2] += 4.0 * CoeffIntegral * currVel.y() * cos(currPos.x());
+        IntegralY[j / 2] += 4.0 * CoeffIntegral * currVel.y() * sin(currPos.x());
+      }
+    }
+
+    for (int j = 0; j < K; j++) {
+      pos.x() += IntegralX[j];
+      pos.y() += IntegralY[j];
+
+      navsim::planning::Pose2d pose;
+      pose.x = pos.x();
+      pose.y = pos.y();
+      pose.yaw = Yaw[j];
+      optimization_poses.push_back(pose);
+    }
+
+    sumT += pieceTime[i];
+  }
+
+  return optimization_poses;
+}
+
+bool JpsPlannerPlugin::convertMincoOutputToResult(navsim::plugin::PlanningResult& result) const {
+  // Extract MINCO trajectory
+  std::vector<navsim::planning::Pose2d> minco_poses = extractMincoTrajectory();
+
+  if (minco_poses.empty()) {
+    std::cerr << "[JPSPlannerPlugin] MINCO trajectory is empty!" << std::endl;
+    return false;
+  }
+
+  if (verbose_) {
+    std::cout << "[JPSPlannerPlugin] Using MINCO trajectory with "
+              << minco_poses.size() << " points" << std::endl;
+  }
+
+  // Convert to PlanningResult format
+  result.trajectory.clear();
+  result.trajectory.reserve(minco_poses.size());
+
+  double cumulative_time = 0.0;
+  double cumulative_length = 0.0;
+
+  for (size_t i = 0; i < minco_poses.size(); ++i) {
+    navsim::plugin::TrajectoryPoint traj_pt;
+    traj_pt.pose = minco_poses[i];
+
+    // Calculate velocities (simple approximation)
+    traj_pt.twist.vx = jps_config_.max_vel;
+    traj_pt.twist.vy = 0.0;
+    traj_pt.twist.omega = 0.0;
+
+    // Calculate path length and time
+    if (i > 0) {
+      double dx = minco_poses[i].x - minco_poses[i-1].x;
+      double dy = minco_poses[i].y - minco_poses[i-1].y;
+      double segment_length = std::sqrt(dx*dx + dy*dy);
+      cumulative_length += segment_length;
+      cumulative_time += segment_length / jps_config_.max_vel;
+    }
+
+    traj_pt.time_from_start = cumulative_time;
+    traj_pt.path_length = cumulative_length;
+    traj_pt.acceleration = 0.0;
+    traj_pt.curvature = 0.0;
+
+    result.trajectory.push_back(traj_pt);
+  }
+
+  // Store trajectory metadata
+  result.metadata["has_trajectory"] = 1.0;
+  result.metadata["trajectory_source"] = 1.0;  // 1.0 = MINCO, 0.0 = JPS
+  result.metadata["path_length"] = static_cast<double>(minco_poses.size());
 
   return true;
 }

@@ -7,6 +7,7 @@
 add_library(jps_planner_plugin SHARED
     algorithm/jps_planner.cpp
     algorithm/graph_search.cpp
+    algorithm/opt/optimizer.cpp
     adapter/jps_planner_plugin.cpp
     adapter/register.cpp)
 

@@ -368,8 +368,14 @@ bool JpsPlannerPlugin::plan(const navsim::planning::PlanningContext& context,
 
   // Collect MINCO optimized trajectory (even if optimization failed, we can still visualize the attempt)
   if (msplanner_) {
-    std::vector<navsim::planning::Pose2d> minco_poses = extractMincoTrajectory();
-    if (!minco_poses.empty()) {
+    std::vector<navsim::plugin::TrajectoryPoint> minco_trajectory = extractMincoTrajectory();
+    if (!minco_trajectory.empty()) {
+      // Convert TrajectoryPoint to Pose2d for visualization
+      std::vector<navsim::planning::Pose2d> minco_poses;
+      minco_poses.reserve(minco_trajectory.size());
+      for (const auto& traj_pt : minco_trajectory) {
+        minco_poses.push_back(traj_pt.pose);
+      }
       global_debug_paths.push_back(minco_poses);
       if (verbose_) {
         std::cout << "[JPSPlannerPlugin] === PATH 5: MINCO final trajectory size: " << minco_poses.size() << std::endl;
@@ -701,14 +707,14 @@ bool JpsPlannerPlugin::convertContextToJPSInput(const navsim::planning::Planning
   return true;
 }
 
-std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractMincoTrajectory() const {
-  std::vector<navsim::planning::Pose2d> minco_poses;
+std::vector<navsim::plugin::TrajectoryPoint> JpsPlannerPlugin::extractMincoTrajectory() const {
+  std::vector<navsim::plugin::TrajectoryPoint> minco_trajectory;
 
   if (!msplanner_) {
     if (verbose_) {
       std::cout << "[JPSPlannerPlugin] extractMincoTrajectory: msplanner_ is null" << std::endl;
     }
-    return minco_poses;
+    return minco_trajectory;
   }
 
   const auto& final_traj = msplanner_->final_traj_;
@@ -719,7 +725,7 @@ std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractMincoTrajectory()
     if (verbose_) {
       std::cout << "[JPSPlannerPlugin] extractMincoTrajectory: final_traj has no pieces" << std::endl;
     }
-    return minco_poses;
+    return minco_trajectory;
   }
 
   // Get start state from JPS planner
@@ -728,7 +734,7 @@ std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractMincoTrajectory()
     if (verbose_) {
       std::cout << "[JPSPlannerPlugin] extractMincoTrajectory: UnOccupied_positions is empty" << std::endl;
     }
-    return minco_poses;
+    return minco_trajectory;
   }
 
   double ini_x = flat_traj.UnOccupied_positions[0].x();
@@ -740,6 +746,7 @@ std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractMincoTrajectory()
   }
 
   // Extract trajectory using Simpson's rule integration (same as ROS version)
+  // Reference: mincoPathPub() in optimizer.cpp
   int K = 50;  // Sampling resolution
   int SamNumEachPart = 2 * K;
   double sumT = 0.0;
@@ -747,6 +754,8 @@ std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractMincoTrajectory()
   Eigen::VectorXd pieceTime = final_traj.getDurations();
 
   Eigen::Vector2d pos(ini_x, ini_y);
+  double cumulative_time = 0.0;
+  double cumulative_length = 0.0;
 
   for(int i = 0; i < TrajNum; i++) {
     double step = pieceTime[i] / K;
@@ -759,18 +768,28 @@ std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractMincoTrajectory()
     IntegralY.setZero();
     Eigen::VectorXd Yaw(K);
     Yaw.setZero();
+    Eigen::VectorXd Vel(K);      // Linear velocity (s)
+    Vel.setZero();
+    Eigen::VectorXd Omega(K);    // Angular velocity (yaw)
+    Omega.setZero();
+    Eigen::VectorXd Acc(K);      // Linear acceleration (s)
+    Acc.setZero();
 
     double s1 = 0.0;
     for(int j = 0; j <= SamNumEachPart; j++) {
       if(j % 2 == 0) {
-        Eigen::Vector2d currPos = final_traj.getPos(s1 + sumT);
-        Eigen::Vector2d currVel = final_traj.getVel(s1 + sumT);
+        Eigen::Vector2d currPos = final_traj.getPos(s1 + sumT);  // [yaw, s]
+        Eigen::Vector2d currVel = final_traj.getVel(s1 + sumT);  // [dyaw/dt, ds/dt]
+        Eigen::Vector2d currAcc = final_traj.getAcc(s1 + sumT);  // [d²yaw/dt², d²s/dt²]
         s1 += halfstep;
 
         if(j != 0) {
           IntegralX[j/2-1] += CoeffIntegral * currVel.y() * cos(currPos.x());
           IntegralY[j/2-1] += CoeffIntegral * currVel.y() * sin(currPos.x());
           Yaw[j/2-1] = currPos.x();
+          Vel[j/2-1] = currVel.y();      // Linear velocity
+          Omega[j/2-1] = currVel.x();    // Angular velocity
+          Acc[j/2-1] = currAcc.y();      // Linear acceleration
         }
         if(j != SamNumEachPart) {
           IntegralX[j/2] += CoeffIntegral * currVel.y() * cos(currPos.x());
@@ -792,17 +811,50 @@ std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractMincoTrajectory()
       pos.x() += IntegralX[j];
       pos.y() += IntegralY[j];
 
-      navsim::planning::Pose2d pose;
-      pose.x = pos.x();
-      pose.y = pos.y();
-      pose.yaw = Yaw[j];
-      minco_poses.push_back(pose);
+      // Calculate path length increment
+      double segment_length = std::sqrt(IntegralX[j]*IntegralX[j] + IntegralY[j]*IntegralY[j]);
+      cumulative_length += segment_length;
+      cumulative_time += step;
+
+      // Create trajectory point with full dynamics
+      navsim::plugin::TrajectoryPoint traj_pt;
+
+      // Pose
+      traj_pt.pose.x = pos.x();
+      traj_pt.pose.y = pos.y();
+      traj_pt.pose.yaw = Yaw[j];
+
+      // Twist (velocity in body frame for differential drive)
+      traj_pt.twist.vx = Vel[j];      // Linear velocity (forward)
+      traj_pt.twist.vy = 0.0;         // No lateral velocity for differential drive
+      traj_pt.twist.omega = Omega[j]; // Angular velocity
+
+      // Acceleration
+      traj_pt.acceleration = Acc[j];
+
+      // Time and path length
+      traj_pt.time_from_start = cumulative_time;
+      traj_pt.path_length = cumulative_length;
+
+      // Curvature (κ = ω / v, avoid division by zero)
+      if (std::abs(Vel[j]) > 1e-6) {
+        traj_pt.curvature = Omega[j] / Vel[j];
+      } else {
+        traj_pt.curvature = 0.0;
+      }
+
+      minco_trajectory.push_back(traj_pt);
     }
 
     sumT += pieceTime[i];
   }
 
-  return minco_poses;
+  if (verbose_) {
+    std::cout << "[JPSPlannerPlugin] Extracted " << minco_trajectory.size()
+              << " trajectory points with full dynamics" << std::endl;
+  }
+
+  return minco_trajectory;
 }
 
 std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractPreprocessingTrajectory() const {
@@ -972,56 +1024,39 @@ std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractMainOptimizationT
 }
 
 bool JpsPlannerPlugin::convertMincoOutputToResult(navsim::plugin::PlanningResult& result) const {
-  // Extract MINCO trajectory
-  std::vector<navsim::planning::Pose2d> minco_poses = extractMincoTrajectory();
+  // Extract MINCO trajectory with full dynamics
+  std::vector<navsim::plugin::TrajectoryPoint> minco_trajectory = extractMincoTrajectory();
 
-  if (minco_poses.empty()) {
+  if (minco_trajectory.empty()) {
     std::cerr << "[JPSPlannerPlugin] MINCO trajectory is empty!" << std::endl;
     return false;
   }
 
   if (verbose_) {
     std::cout << "[JPSPlannerPlugin] Using MINCO trajectory with "
-              << minco_poses.size() << " points" << std::endl;
+              << minco_trajectory.size() << " points" << std::endl;
   }
 
-  // Convert to PlanningResult format
-  result.trajectory.clear();
-  result.trajectory.reserve(minco_poses.size());
-
-  double cumulative_time = 0.0;
-  double cumulative_length = 0.0;
-
-  for (size_t i = 0; i < minco_poses.size(); ++i) {
-    navsim::plugin::TrajectoryPoint traj_pt;
-    traj_pt.pose = minco_poses[i];
-
-    // Calculate velocities (simple approximation)
-    traj_pt.twist.vx = jps_config_.max_vel;
-    traj_pt.twist.vy = 0.0;
-    traj_pt.twist.omega = 0.0;
-
-    // Calculate path length and time
-    if (i > 0) {
-      double dx = minco_poses[i].x - minco_poses[i-1].x;
-      double dy = minco_poses[i].y - minco_poses[i-1].y;
-      double segment_length = std::sqrt(dx*dx + dy*dy);
-      cumulative_length += segment_length;
-      cumulative_time += segment_length / jps_config_.max_vel;
-    }
-
-    traj_pt.time_from_start = cumulative_time;
-    traj_pt.path_length = cumulative_length;
-    traj_pt.acceleration = 0.0;
-    traj_pt.curvature = 0.0;
-
-    result.trajectory.push_back(traj_pt);
-  }
+  // Directly use the extracted trajectory (already has full dynamics)
+  result.trajectory = minco_trajectory;
 
   // Store trajectory metadata
   result.metadata["has_trajectory"] = 1.0;
   result.metadata["trajectory_source"] = 1.0;  // 1.0 = MINCO, 0.0 = JPS
-  result.metadata["path_length"] = static_cast<double>(minco_poses.size());
+  result.metadata["path_length"] = static_cast<double>(minco_trajectory.size());
+
+  if (verbose_) {
+    std::cout << "[JPSPlannerPlugin] MINCO trajectory statistics:" << std::endl;
+    std::cout << "  - Total points: " << minco_trajectory.size() << std::endl;
+    std::cout << "  - Total time: " << result.getTotalTime() << " s" << std::endl;
+    std::cout << "  - Total length: " << result.getTotalLength() << " m" << std::endl;
+    if (!minco_trajectory.empty()) {
+      std::cout << "  - First point: v=" << minco_trajectory.front().twist.vx
+                << " m/s, ω=" << minco_trajectory.front().twist.omega << " rad/s" << std::endl;
+      std::cout << "  - Last point: v=" << minco_trajectory.back().twist.vx
+                << " m/s, ω=" << minco_trajectory.back().twist.omega << " rad/s" << std::endl;
+    }
+  }
 
   return true;
 }

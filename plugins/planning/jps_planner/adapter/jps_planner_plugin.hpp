@@ -109,10 +109,10 @@ private:
                                  navsim::plugin::PlanningResult& result) const;
 
   /**
-   * @brief Extract MINCO optimized trajectory points for visualization
-   * @return Vector of poses representing the MINCO trajectory
+   * @brief Extract MINCO optimized trajectory with full dynamics
+   * @return Vector of trajectory points with pose, twist, acceleration, etc.
    */
-  std::vector<navsim::planning::Pose2d> extractMincoTrajectory() const;
+  std::vector<navsim::plugin::TrajectoryPoint> extractMincoTrajectory() const;
 
   /**
    * @brief Extract preprocessing trajectory (before main optimization)

@@ -46,7 +46,7 @@ bool JPSPlanner::plan(const Eigen::Vector3d& start, const Eigen::Vector3d& goal)
   end_state_ = goal;
 
   // Initialize current state for trajectory generation
-  current_state_VAJ_ = Eigen::Vector3d(0.5, 0.0, 0.0);  // Initial velocity, acceleration, jerk
+  current_state_VAJ_ = Eigen::Vector3d(0.0, 0.0, 0.0);  // Initial velocity, acceleration, jerk
   current_state_OAJ_ = Eigen::Vector3d(0.0, 0.0, 0.0);  // Initial angular velocity, acceleration, jerk
 
   Eigen::Vector2i start_idx = map_util_->coord2gridIndex(start.head(2));

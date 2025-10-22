@@ -128,10 +128,12 @@ private:
 
   /**
    * @brief Convert MINCO output to PlanningResult format
+   * @param context Planning context (for start/goal states and vehicle params)
    * @param result Output planning result
    * @return true if conversion succeeded
    */
-  bool convertMincoOutputToResult(navsim::plugin::PlanningResult& result) const;
+  bool convertMincoOutputToResult(const navsim::planning::PlanningContext& context,
+                                   navsim::plugin::PlanningResult& result) const;
 
   /**
    * @brief Update optimizer config from ego vehicle chassis configuration
@@ -140,6 +142,16 @@ private:
    */
   void updateOptimizerConfigFromChassis(const navsim::planning::EgoVehicle& ego,
                                          JPS::OptimizerConfig& config) const;
+
+  /**
+   * @brief Save trajectory to log file with metadata
+   * @param context Planning context (for start/goal states and vehicle params)
+   * @param minco_trajectory Trajectory points to save
+   * @param result Planning result (for statistics)
+   */
+  void saveTrajectoryToLog(const navsim::planning::PlanningContext& context,
+                           const std::vector<navsim::plugin::TrajectoryPoint>& minco_trajectory,
+                           const navsim::plugin::PlanningResult& result) const;
 
   // ========== Member Variables ==========
 

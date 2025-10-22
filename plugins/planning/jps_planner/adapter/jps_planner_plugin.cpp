@@ -5,7 +5,14 @@
 
 #include "jps_planner_plugin.hpp"
 #include <iostream>
+#include <fstream>
+#include <iomanip>
 #include <cmath>
+#include <limits>
+#include <algorithm>
+#include <chrono>
+#include <sstream>
+#include <ctime>
 
 namespace jps_planner {
 namespace adapter {
@@ -272,7 +279,7 @@ bool JpsPlannerPlugin::plan(const navsim::planning::PlanningContext& context,
   // Convert to PlanningResult
   // If optimization succeeded, use MINCO trajectory; otherwise use JPS trajectory
   if (optimize_result) {
-    if (!convertMincoOutputToResult(result)) {
+    if (!convertMincoOutputToResult(context, result)) {
       std::cerr << "[JPSPlannerPlugin] Failed to convert MINCO output to result!" << std::endl;
       result.success = false;
       result.failure_reason = "Failed to convert MINCO output";
@@ -757,6 +764,48 @@ std::vector<navsim::plugin::TrajectoryPoint> JpsPlannerPlugin::extractMincoTraje
   double cumulative_time = 0.0;
   double cumulative_length = 0.0;
 
+  // 🔧 添加起点（t=0）到轨迹
+  {
+    navsim::plugin::TrajectoryPoint initial_pt;
+
+    // Get initial state from trajectory at t=0
+    Eigen::Vector2d initial_pos = final_traj.getPos(0.0);  // [yaw, s]
+    Eigen::Vector2d initial_vel = final_traj.getVel(0.0);  // [dyaw/dt, ds/dt]
+    Eigen::Vector2d initial_acc = final_traj.getAcc(0.0);  // [d²yaw/dt², d²s/dt²]
+
+    // Pose
+    initial_pt.pose.x = ini_x;
+    initial_pt.pose.y = ini_y;
+    initial_pt.pose.yaw = initial_pos[0];  // Initial yaw
+
+    // Twist (velocity in body frame)
+    initial_pt.twist.vx = initial_vel[1];  // Initial linear velocity
+    initial_pt.twist.vy = 0.0;             // No lateral velocity for differential drive
+    initial_pt.twist.omega = initial_vel[0];  // Initial angular velocity
+
+    // Acceleration
+    initial_pt.acceleration = initial_acc[1];  // Initial linear acceleration
+
+    // Time and path length
+    initial_pt.time_from_start = 0.0;
+    initial_pt.path_length = 0.0;
+
+    // Curvature (κ = ω / v, avoid division by zero)
+    if (std::abs(initial_pt.twist.vx) > 1e-6) {
+      initial_pt.curvature = initial_pt.twist.omega / initial_pt.twist.vx;
+    } else {
+      initial_pt.curvature = 0.0;
+    }
+
+    minco_trajectory.push_back(initial_pt);
+
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] Added initial point at t=0: "
+                << "pos=(" << initial_pt.pose.x << ", " << initial_pt.pose.y << "), "
+                << "vx=" << initial_pt.twist.vx << ", omega=" << initial_pt.twist.omega << std::endl;
+    }
+  }
+
   for(int i = 0; i < TrajNum; i++) {
     double step = pieceTime[i] / K;
     double halfstep = step / 2.0;
@@ -1023,7 +1072,8 @@ std::vector<navsim::planning::Pose2d> JpsPlannerPlugin::extractMainOptimizationT
   return optimization_poses;
 }
 
-bool JpsPlannerPlugin::convertMincoOutputToResult(navsim::plugin::PlanningResult& result) const {
+bool JpsPlannerPlugin::convertMincoOutputToResult(const navsim::planning::PlanningContext& context,
+                                                   navsim::plugin::PlanningResult& result) const {
   // Extract MINCO trajectory with full dynamics
   std::vector<navsim::plugin::TrajectoryPoint> minco_trajectory = extractMincoTrajectory();
 
@@ -1056,7 +1106,66 @@ bool JpsPlannerPlugin::convertMincoOutputToResult(navsim::plugin::PlanningResult
       std::cout << "  - Last point: v=" << minco_trajectory.back().twist.vx
                 << " m/s, ω=" << minco_trajectory.back().twist.omega << " rad/s" << std::endl;
     }
+
+    // 🔍 详细打印前 5 个点的完整信息
+    std::cout << "\n[JPSPlannerPlugin] First 5 trajectory points (detailed):" << std::endl;
+    size_t num_to_print = std::min(size_t(5), minco_trajectory.size());
+    for (size_t i = 0; i < num_to_print; ++i) {
+      const auto& pt = minco_trajectory[i];
+      std::cout << "  Point[" << i << "]: "
+                << "pos=(" << pt.pose.x << ", " << pt.pose.y << ", yaw=" << pt.pose.yaw << "), "
+                << "twist=(vx=" << pt.twist.vx << ", vy=" << pt.twist.vy << ", ω=" << pt.twist.omega << "), "
+                << "acc=" << pt.acceleration << ", "
+                << "curv=" << pt.curvature << ", "
+                << "t=" << pt.time_from_start << ", "
+                << "s=" << pt.path_length << std::endl;
+    }
+
+    // 🔍 详细打印最后 5 个点的完整信息
+    std::cout << "\n[JPSPlannerPlugin] Last 5 trajectory points (detailed):" << std::endl;
+    size_t start_idx = minco_trajectory.size() > 5 ? minco_trajectory.size() - 5 : 0;
+    for (size_t i = start_idx; i < minco_trajectory.size(); ++i) {
+      const auto& pt = minco_trajectory[i];
+      std::cout << "  Point[" << i << "]: "
+                << "pos=(" << pt.pose.x << ", " << pt.pose.y << ", yaw=" << pt.pose.yaw << "), "
+                << "twist=(vx=" << pt.twist.vx << ", vy=" << pt.twist.vy << ", ω=" << pt.twist.omega << "), "
+                << "acc=" << pt.acceleration << ", "
+                << "curv=" << pt.curvature << ", "
+                << "t=" << pt.time_from_start << ", "
+                << "s=" << pt.path_length << std::endl;
+    }
+
+    // 🔍 统计速度、加速度、曲率的范围
+    double min_vx = std::numeric_limits<double>::max();
+    double max_vx = std::numeric_limits<double>::lowest();
+    double min_omega = std::numeric_limits<double>::max();
+    double max_omega = std::numeric_limits<double>::lowest();
+    double min_acc = std::numeric_limits<double>::max();
+    double max_acc = std::numeric_limits<double>::lowest();
+    double min_curv = std::numeric_limits<double>::max();
+    double max_curv = std::numeric_limits<double>::lowest();
+
+    for (const auto& pt : minco_trajectory) {
+      min_vx = std::min(min_vx, pt.twist.vx);
+      max_vx = std::max(max_vx, pt.twist.vx);
+      min_omega = std::min(min_omega, pt.twist.omega);
+      max_omega = std::max(max_omega, pt.twist.omega);
+      min_acc = std::min(min_acc, pt.acceleration);
+      max_acc = std::max(max_acc, pt.acceleration);
+      min_curv = std::min(min_curv, pt.curvature);
+      max_curv = std::max(max_curv, pt.curvature);
+    }
+
+    std::cout << "\n[JPSPlannerPlugin] Dynamics ranges:" << std::endl;
+    std::cout << "  - Velocity (vx): [" << min_vx << ", " << max_vx << "] m/s" << std::endl;
+    std::cout << "  - Angular velocity (ω): [" << min_omega << ", " << max_omega << "] rad/s" << std::endl;
+    std::cout << "  - Acceleration: [" << min_acc << ", " << max_acc << "] m/s²" << std::endl;
+    std::cout << "  - Curvature: [" << min_curv << ", " << max_curv << "] 1/m" << std::endl;
+    std::cout << std::endl;
   }
+
+  // 📝 将整条轨迹写入日志文件（包含起点、终点、车辆参数、约束）
+  // saveTrajectoryToLog(context, minco_trajectory, result);
 
   return true;
 }
@@ -1182,6 +1291,138 @@ bool JpsPlannerPlugin::convertJPSOutputToResult(const JPS::JPSPlanner& jps_plann
   result.metadata["path_length"] = static_cast<double>(path.size());
 
   return true;
+}
+
+// ============================================================================
+// Trajectory Logging
+// ============================================================================
+
+void JpsPlannerPlugin::saveTrajectoryToLog(
+    const navsim::planning::PlanningContext& context,
+    const std::vector<navsim::plugin::TrajectoryPoint>& minco_trajectory,
+    const navsim::plugin::PlanningResult& result) const {
+
+  // 生成带时间戳的文件名
+  auto now = std::chrono::system_clock::now();
+  auto now_time_t = std::chrono::system_clock::to_time_t(now);
+  auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+
+  std::stringstream filename;
+  filename << "minco_trajectory_"
+           << std::put_time(std::localtime(&now_time_t), "%Y%m%d_%H%M%S")
+           << "_" << std::setfill('0') << std::setw(3) << now_ms.count()
+           << ".log";
+
+  std::ofstream log_file(filename.str());
+  if (!log_file.is_open()) {
+    std::cerr << "[JPSPlannerPlugin] Failed to open log file for writing: " << filename.str() << std::endl;
+    return;
+  }
+
+  // 写入文件头
+  log_file << "# ============================================================\n";
+  log_file << "# MINCO Trajectory Full Log\n";
+  log_file << "# ============================================================\n";
+  log_file << "#\n";
+
+  // 📊 轨迹统计信息
+  log_file << "# [Trajectory Statistics]\n";
+  log_file << "# Total points: " << minco_trajectory.size() << "\n";
+  log_file << "# Total time: " << result.getTotalTime() << " s\n";
+  log_file << "# Total length: " << result.getTotalLength() << " m\n";
+  log_file << "#\n";
+
+  // 🚗 起点状态（当前车辆状态）
+  log_file << "# [Start State]\n";
+  log_file << "# start_x: " << context.ego.pose.x << " m\n";
+  log_file << "# start_y: " << context.ego.pose.y << " m\n";
+  log_file << "# start_yaw: " << context.ego.pose.yaw << " rad\n";
+  log_file << "# start_vx: " << context.ego.twist.vx << " m/s\n";
+  log_file << "# start_vy: " << context.ego.twist.vy << " m/s\n";
+  log_file << "# start_omega: " << context.ego.twist.omega << " rad/s\n";
+  log_file << "#\n";
+
+  // 🎯 终点状态
+  log_file << "# [Goal State]\n";
+  log_file << "# goal_x: " << context.task.goal_pose.x << " m\n";
+  log_file << "# goal_y: " << context.task.goal_pose.y << " m\n";
+  log_file << "# goal_yaw: " << context.task.goal_pose.yaw << " rad\n";
+  log_file << "#\n";
+
+  // 🚙 车辆几何参数
+  log_file << "# [Vehicle Geometry]\n";
+  log_file << "# chassis_model: " << context.ego.chassis_model << "\n";
+  log_file << "# wheelbase: " << context.ego.kinematics.wheelbase << " m\n";
+  log_file << "# track_width: " << context.ego.kinematics.track_width << " m\n";
+  log_file << "# front_overhang: " << context.ego.kinematics.front_overhang << " m\n";
+  log_file << "# rear_overhang: " << context.ego.kinematics.rear_overhang << " m\n";
+  log_file << "# body_length: " << context.ego.kinematics.body_length << " m\n";
+  log_file << "# body_width: " << context.ego.kinematics.body_width << " m\n";
+  log_file << "# wheel_radius: " << context.ego.kinematics.wheel_radius << " m\n";
+  log_file << "#\n";
+
+  // ⚙️ 车辆动力学约束
+  log_file << "# [Vehicle Limits]\n";
+  log_file << "# max_velocity: " << context.ego.limits.max_velocity << " m/s\n";
+  log_file << "# max_acceleration: " << context.ego.limits.max_acceleration << " m/s²\n";
+  log_file << "# max_deceleration: " << context.ego.limits.max_deceleration << " m/s²\n";
+  log_file << "# max_steer_angle: " << context.ego.limits.max_steer_angle << " rad\n";
+  log_file << "# max_steer_rate: " << context.ego.limits.max_steer_rate << " rad/s\n";
+  log_file << "# max_jerk: " << context.ego.limits.max_jerk << " m/s³\n";
+  log_file << "# max_curvature: " << context.ego.limits.max_curvature << " 1/m\n";
+  log_file << "#\n";
+
+  // 🔧 优化器约束
+  log_file << "# [Optimizer Constraints]\n";
+  log_file << "# max_vel: " << jps_config_.optimizer.max_vel << " m/s\n";
+  log_file << "# min_vel: " << jps_config_.optimizer.min_vel << " m/s\n";
+  log_file << "# max_acc: " << jps_config_.optimizer.max_acc << " m/s²\n";
+  log_file << "# max_omega: " << jps_config_.optimizer.max_omega << " rad/s\n";
+  log_file << "# max_domega: " << jps_config_.optimizer.max_domega << " rad/s²\n";
+  log_file << "# max_centripetal_acc: " << jps_config_.optimizer.max_centripetal_acc << " m/s²\n";
+  log_file << "# safe_distance: " << jps_config_.safe_dis << " m\n";
+  log_file << "# final_min_safe_distance: " << jps_config_.optimizer.finalMinSafeDis << " m\n";
+  log_file << "#\n";
+
+  // 🎯 优化器权重
+  log_file << "# [Optimizer Weights]\n";
+  log_file << "# time_weight: " << jps_config_.optimizer.time_weight << "\n";
+  log_file << "# acc_weight: " << jps_config_.optimizer.acc_weight << "\n";
+  log_file << "# domega_weight: " << jps_config_.optimizer.domega_weight << "\n";
+  log_file << "# collision_weight: " << jps_config_.optimizer.collision_weight << "\n";
+  log_file << "# moment_weight: " << jps_config_.optimizer.moment_weight << "\n";
+  log_file << "# mean_time_weight: " << jps_config_.optimizer.mean_time_weight << "\n";
+  log_file << "#\n";
+
+  // 📋 数据格式
+  log_file << "# [Trajectory Data Format]\n";
+  log_file << "# Columns: index, x, y, yaw, vx, vy, omega, acceleration, curvature, time, path_length\n";
+  log_file << "# Units: -, m, m, rad, m/s, m/s, rad/s, m/s², 1/m, s, m\n";
+  log_file << "#\n";
+  log_file << "# ============================================================\n";
+  log_file << "# [Trajectory Points]\n";
+  log_file << "# ============================================================\n";
+
+  log_file << std::fixed << std::setprecision(8);
+
+  // 写入轨迹点数据
+  for (size_t i = 0; i < minco_trajectory.size(); ++i) {
+    const auto& pt = minco_trajectory[i];
+    log_file << i << ", "
+             << pt.pose.x << ", "
+             << pt.pose.y << ", "
+             << pt.pose.yaw << ", "
+             << pt.twist.vx << ", "
+             << pt.twist.vy << ", "
+             << pt.twist.omega << ", "
+             << pt.acceleration << ", "
+             << pt.curvature << ", "
+             << pt.time_from_start << ", "
+             << pt.path_length << "\n";
+  }
+
+  log_file.close();
+  std::cout << "[JPSPlannerPlugin] Full trajectory saved to: " << filename.str() << std::endl;
 }
 
 }  // namespace adapter

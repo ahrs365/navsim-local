@@ -1165,7 +1165,7 @@ bool JpsPlannerPlugin::convertMincoOutputToResult(const navsim::planning::Planni
   }
 
   // 📝 将整条轨迹写入日志文件（包含起点、终点、车辆参数、约束）
-  // saveTrajectoryToLog(context, minco_trajectory, result);
+  saveTrajectoryToLog(context, minco_trajectory, result);
 
   return true;
 }

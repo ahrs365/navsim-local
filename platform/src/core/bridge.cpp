@@ -614,31 +614,32 @@ nlohmann::json Bridge::Impl::plan_to_json(const proto::PlanUpdate& plan, double 
 
   // 转换 trajectory（前端期望 trajectory 字段，不是 points）
   nlohmann::json trajectory = nlohmann::json::array();
-  double s = 0.0;  // 累积弧长
 
   for (int i = 0; i < plan.trajectory_size(); ++i) {
     const auto& pt = plan.trajectory(i);
 
     nlohmann::json point;
+    // Pose
     point["x"] = pt.x();
     point["y"] = pt.y();
-    point["yaw"] = pt.yaw();  // 前端期望 yaw 字段
+    point["yaw"] = pt.yaw();
+
+    // Time
     point["t"] = pt.t();
 
-    // 计算 s（累积弧长）
-    if (i > 0) {
-      const auto& prev_pt = plan.trajectory(i - 1);
-      double dx = pt.x() - prev_pt.x();
-      double dy = pt.y() - prev_pt.y();
-      s += std::sqrt(dx * dx + dy * dy);
-    }
-    point["s"] = s;
+    // Twist (velocity)
+    point["vx"] = pt.vx();
+    point["vy"] = pt.vy();
+    point["omega"] = pt.omega();
 
-    // 计算 kappa（曲率，暂时填 0.0）
-    point["kappa"] = 0.0;
+    // Acceleration
+    point["acceleration"] = pt.acceleration();
 
-    // 计算 v（速度，暂时填常数 0.8 m/s）
-    point["v"] = 0.8;
+    // Curvature
+    point["curvature"] = pt.curvature();
+
+    // Path length
+    point["path_length"] = pt.path_length();
 
     trajectory.push_back(point);
   }
@@ -646,11 +647,22 @@ nlohmann::json Bridge::Impl::plan_to_json(const proto::PlanUpdate& plan, double 
   // 前端期望 trajectory 字段
   data["trajectory"] = trajectory;
 
-  // 添加 summary（占位值）
+  // 计算 summary（真实值）
+  double max_kappa = 0.0;
+  double total_length = 0.0;
+  if (plan.trajectory_size() > 0) {
+    // 找到最大曲率
+    for (int i = 0; i < plan.trajectory_size(); ++i) {
+      max_kappa = std::max(max_kappa, std::abs(plan.trajectory(i).curvature()));
+    }
+    // 总长度从最后一个点获取
+    total_length = plan.trajectory(plan.trajectory_size() - 1).path_length();
+  }
+
   data["summary"] = {
-    {"min_dyn_dist", 1.5},
-    {"max_kappa", 0.3},
-    {"total_length", s}
+    {"min_dyn_dist", 1.5},  // TODO: 从规划器获取真实值
+    {"max_kappa", max_kappa},
+    {"total_length", total_length}
   };
 
   j["data"] = data;

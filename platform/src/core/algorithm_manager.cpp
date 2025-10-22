@@ -300,10 +300,27 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
 
   for (const auto& point : planning_result.trajectory) {
     auto* traj_point = plan_update.add_trajectory();
+    // Pose
     traj_point->set_x(point.pose.x);
     traj_point->set_y(point.pose.y);
     traj_point->set_yaw(point.pose.yaw);
+
+    // Time
     traj_point->set_t(point.time_from_start);
+
+    // Twist (velocity)
+    traj_point->set_vx(point.twist.vx);
+    traj_point->set_vy(point.twist.vy);
+    traj_point->set_omega(point.twist.omega);
+
+    // Acceleration
+    traj_point->set_acceleration(point.acceleration);
+
+    // Curvature
+    traj_point->set_curvature(point.curvature);
+
+    // Path length
+    traj_point->set_path_length(point.path_length);
   }
 
   // 设置控制指令（简单版本：使用第一个轨迹点的加速度）

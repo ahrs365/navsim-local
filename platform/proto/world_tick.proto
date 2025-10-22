@@ -15,10 +15,27 @@ message Twist2D {
 }
 
 message TrajectoryPoint {
+  // Pose
   double x = 1;
   double y = 2;
   double yaw = 3;
+
+  // Time
   double t = 4;
+
+  // Twist (velocity)
+  double vx = 5;
+  double vy = 6;
+  double omega = 7;
+
+  // Acceleration
+  double acceleration = 8;
+
+  // Curvature
+  double curvature = 9;
+
+  // Path length
+  double path_length = 10;
 }
 
 message GoalTolerance {

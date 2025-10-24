@@ -134,7 +134,8 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
   // 🔧 检查仿真是否已开始
   if (!simulation_started_.load()) {
     // 仿真未开始，只更新可视化，不执行算法
-    if (visualizer_) {
+    if (visualizer_ && !use_local_simulator_) {
+      // 只在非本地仿真模式下管理帧（本地仿真模式由 process_simulation_step 管理）
       visualizer_->beginFrame();
 
       viz::IVisualizer::ConnectionStatus connection_status;
@@ -160,8 +161,8 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
     return false;  // 返回 false 表示未处理
   }
 
-  // 🎨 开始新的可视化帧
-  if (visualizer_) {
+  // 🎨 开始新的可视化帧（仅在非本地仿真模式）
+  if (visualizer_ && !use_local_simulator_) {
     visualizer_->beginFrame();
 
     viz::IVisualizer::ConnectionStatus connection_status;
@@ -244,8 +245,8 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
     if (config_.verbose_logging) {
       std::cerr << "[AlgorithmManager] Perception plugin processing failed" << std::endl;
     }
-    // 🎨 结束帧（即使失败也要渲染）
-    if (visualizer_) {
+    // 🎨 结束帧（即使失败也要渲染）- 仅在非本地仿真模式
+    if (visualizer_ && !use_local_simulator_) {
       plugin::PlanningResult failure_result;
       failure_result.success = false;
       failure_result.failure_reason = "Perception Failed";
@@ -282,8 +283,8 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
     if (planning_result.failure_reason.empty()) {
       planning_result.failure_reason = "Planner returned false";
     }
-    // 🎨 结束帧（即使失败也要渲染）
-    if (visualizer_) {
+    // 🎨 结束帧（即使失败也要渲染）- 仅在非本地仿真模式
+    if (visualizer_ && !use_local_simulator_) {
       visualizer_->updatePlanningResult(planning_result);
       visualizer_->showDebugInfo("Status", "Planning Failed");
       visualizer_->endFrame();
@@ -359,8 +360,8 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
     visualizer_->showDebugInfo("Planning", format_ms(planning_time) + " ms");
   }
 
-  // 🎨 结束帧并渲染
-  if (visualizer_) {
+  // 🎨 结束帧并渲染 - 仅在非本地仿真模式
+  if (visualizer_ && !use_local_simulator_) {
     visualizer_->endFrame();
   }
 
@@ -544,14 +545,22 @@ void AlgorithmManager::setupPluginSystem() {
   // 如果配置文件中没有规划器配置，使用默认配置
   if (planner_configs.empty()) {
     planner_configs = {
-      {"StraightLinePlanner", {
+      {"StraightLine", {  // 注意：插件注册名称是 "StraightLine"，不是 "StraightLinePlanner"
         {"default_velocity", 1.5},
         {"time_step", 0.1},
         {"planning_horizon", 5.0},
         {"use_trapezoidal_profile", true},
         {"max_acceleration", 1.0}
       }},
-      {"AStarPlanner", {
+      {"AstarPlanner", {  // 注意：插件注册名称是 "AstarPlanner"，不是 "AStarPlanner"
+        {"time_step", 0.1},
+        {"heuristic_weight", 1.2},
+        {"step_size", 0.5},
+        {"max_iterations", 10000},
+        {"goal_tolerance", 0.5},
+        {"default_velocity", 1.5}
+      }},
+      {"JpsPlanner", {
         {"time_step", 0.1},
         {"heuristic_weight", 1.2},
         {"step_size", 0.5},
@@ -604,7 +613,7 @@ void AlgorithmManager::set_local_simulator(std::shared_ptr<sim::LocalSimulator> 
   }
 }
 
-bool AlgorithmManager::run_simulation_loop() {
+bool AlgorithmManager::run_simulation_loop(const std::atomic<bool>* external_interrupt) {
   if (!local_simulator_) {
     std::cerr << "[AlgorithmManager] LocalSimulator not set" << std::endl;
     return false;
@@ -617,18 +626,6 @@ bool AlgorithmManager::run_simulation_loop() {
 
   std::cout << "[AlgorithmManager] Starting local simulation loop..." << std::endl;
   std::cout << "[AlgorithmManager] Press Ctrl+C to stop" << std::endl;
-
-  // 🎨 在仿真循环启动前，渲染几帧加载画面，避免黑屏
-  if (visualizer_) {
-    for (int i = 0; i < 5; ++i) {
-      // 使用 ImGuiVisualizer 的 renderLoadingScreen() 方法
-      // 由于这是私有方法，我们通过 beginFrame/endFrame 来触发渲染
-      visualizer_->beginFrame();
-      visualizer_->showDebugInfo("Status", "Initializing simulation...");
-      visualizer_->endFrame();
-      std::this_thread::sleep_for(std::chrono::milliseconds(16));  // ~60 FPS
-    }
-  }
 
   // 重置停止标志
   simulation_should_stop_.store(false);
@@ -654,6 +651,12 @@ bool AlgorithmManager::run_simulation_loop() {
     // 🎨 检查可视化窗口是否被关闭
     if (visualizer_ && visualizer_->shouldClose()) {
       std::cout << "[AlgorithmManager] Visualizer window closed, stopping simulation..." << std::endl;
+      break;
+    }
+
+    // 🛑 检查外部中断信号（Ctrl+C）
+    if (external_interrupt && external_interrupt->load()) {
+      std::cout << "[AlgorithmManager] External interrupt received, stopping simulation..." << std::endl;
       break;
     }
 
@@ -706,6 +709,11 @@ void AlgorithmManager::stop_simulation_loop() {
 bool AlgorithmManager::process_simulation_step(double dt) {
   if (!local_simulator_) {
     return false;
+  }
+
+  // 🎨 开始新的可视化帧
+  if (visualizer_) {
+    visualizer_->beginFrame();
   }
 
   // 1. 获取当前世界状态（在仿真步进之前）
@@ -802,7 +810,16 @@ bool AlgorithmManager::process_simulation_step(double dt) {
   // 5. 执行仿真步进（应用新的状态）
   if (!local_simulator_->step(dt)) {
     std::cerr << "[AlgorithmManager] Simulator step failed" << std::endl;
+    // 🎨 即使失败也要结束帧
+    if (visualizer_) {
+      visualizer_->endFrame();
+    }
     return false;
+  }
+
+  // 🎨 结束可视化帧
+  if (visualizer_) {
+    visualizer_->endFrame();
   }
 
   // 注意：本地仿真模式不发送数据到 WebSocket

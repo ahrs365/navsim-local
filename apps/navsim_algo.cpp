@@ -224,7 +224,8 @@ int run_local_simulation(const CommandLineArgs& args) {
 
   // 3. 初始化算法管理器
   navsim::AlgorithmManager::Config algo_config;
-  algo_config.primary_planner = "StraightLinePlanner";
+  // 使用默认配置（JpsPlanner），不要硬编码
+  // algo_config.primary_planner 会使用 AlgorithmManager::Config 的默认值
   algo_config.enable_visualization = args.enable_visualization;
   algo_config.verbose_logging = true;
 
@@ -245,25 +246,43 @@ int run_local_simulation(const CommandLineArgs& args) {
 
   std::cout << "[Main] Starting local simulation..." << std::endl;
 
-  // 5. 运行仿真循环（在单独的线程中）
-  std::thread sim_thread([&algorithm_manager]() {
-    algorithm_manager.run_simulation_loop();
-  });
+  // 5. 运行仿真循环
+  // 根据是否启用可视化选择不同的线程模型
+  if (args.enable_visualization) {
+    // 🎨 可视化模式：主线程运行仿真循环
+    // SDL2 要求窗口的创建、事件处理和渲染必须在同一个线程中
+    std::cout << "[Main] Running simulation loop in main thread (visualization enabled)" << std::endl;
+    std::cout << "[Main] Press Ctrl+C or close the window to stop" << std::endl;
 
-  // 6. 等待中断信号
-  while (!navsim::g_interrupt.load()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // 传递 g_interrupt 信号，让仿真循环能够响应 Ctrl+C
+    algorithm_manager.run_simulation_loop(&navsim::g_interrupt);
+
+    std::cout << "[Main] Local simulation ended" << std::endl;
+  } else {
+    // 无可视化模式：仿真循环在单独的线程中运行
+    std::cout << "[Main] Running simulation loop in separate thread (no visualization)" << std::endl;
+    std::cout << "[Main] Press Ctrl+C to stop" << std::endl;
+
+    std::thread sim_thread([&algorithm_manager]() {
+      algorithm_manager.run_simulation_loop();
+    });
+
+    // 6. 等待中断信号
+    while (!navsim::g_interrupt.load()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    std::cout << "[Main] Shutting down..." << std::endl;
+
+    // 停止仿真循环
+    algorithm_manager.stop_simulation_loop();
+
+    // 清理
+    sim_thread.join();
+
+    std::cout << "[Main] Local simulation ended" << std::endl;
   }
 
-  std::cout << "[Main] Shutting down..." << std::endl;
-
-  // 停止仿真循环
-  algorithm_manager.stop_simulation_loop();
-
-  // 清理
-  sim_thread.join();
-
-  std::cout << "[Main] Local simulation ended" << std::endl;
   return 0;
 }
 

@@ -185,21 +185,31 @@ bool JpsPlannerPlugin::plan(const navsim::planning::PlanningContext& context,
   }
 
   // Call JPS planner
+  auto jps_start = std::chrono::steady_clock::now();
   bool success = jps_planner_->plan(start, goal);
+  auto jps_end = std::chrono::steady_clock::now();
+  double jps_time_ms = std::chrono::duration<double, std::milli>(jps_end - jps_start).count();
+  std::cout << "[JPSPlannerPlugin] ⏱️  JPS path search took " << jps_time_ms << " ms" << std::endl;
+
   if(!success) {
     std::cerr << "[JPSPlannerPlugin] JPS planning failed!" << std::endl;
     result.success = false;
     result.failure_reason = "JPS planning failed";
     failed_plans_++;
     return false;
-  } 
+  }
 
   // Trajectory optimization
   if (verbose_) {
     std::cout << "[JPSPlannerPlugin] Running trajectory optimization..." << std::endl;
   }
 
+  auto opt_start = std::chrono::steady_clock::now();
   bool optimize_result = msplanner_->minco_plan(jps_planner_->flat_traj_);
+  auto opt_end = std::chrono::steady_clock::now();
+  double opt_time_ms = std::chrono::duration<double, std::milli>(opt_end - opt_start).count();
+  std::cout << "[JPSPlannerPlugin] ⏱️  Trajectory optimization took " << opt_time_ms << " ms" << std::endl;
+
   std::string optimization_status;
   if(!optimize_result) {
     std::cerr << "[JPSPlannerPlugin] Optimization failed!" << std::endl;

@@ -41,10 +41,10 @@
   },
   "planning": {
     "primary_planner": "JpsPlanner",
-    "fallback_planner": "StraightLinePlanner",
+    "fallback_planner": "StraightLine",
     "enable_fallback": true,
     "planners": {
-      "StraightLinePlanner": {
+      "StraightLine": {
         "default_velocity": 1.5,
         "time_step": 0.1,
         "planning_horizon": 5.0,

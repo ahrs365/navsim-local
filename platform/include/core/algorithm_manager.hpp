@@ -38,8 +38,8 @@ public:
     std::string config_file = "";          // 插件配置文件路径（为空则使用默认配置）
 
     // 规划配置
-    std::string primary_planner = "StraightLinePlanner";
-    std::string fallback_planner = "StraightLinePlanner";
+    std::string primary_planner = "JpsPlanner";  // 默认使用 JPS 规划器
+    std::string fallback_planner = "StraightLine";  // 降级使用直线规划器
     bool enable_planner_fallback = true;
 
     // 性能配置
@@ -94,9 +94,10 @@ public:
   /**
    * @brief 运行本地仿真循环（新的主循环）
    * 集成本地仿真器，在同一进程内运行仿真和算法
+   * @param external_interrupt 外部中断标志（可选，用于响应 Ctrl+C 等信号）
    * @return 是否成功启动
    */
-  bool run_simulation_loop();
+  bool run_simulation_loop(const std::atomic<bool>* external_interrupt = nullptr);
 
   /**
    * @brief 停止仿真循环

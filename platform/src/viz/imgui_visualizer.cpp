@@ -443,16 +443,13 @@ void ImGuiVisualizer::endFrame() {
   renderLegendPanel();
 
   // 渲染 ImGui - SDL_Renderer 流程
+  // ✅ 正确的渲染顺序：渲染 ImGui -> 呈现（不清屏，让 ImGui 自己管理背景）
+
+  // 1. 渲染 ImGui 绘制数据
   ImGui::Render();
-
-  // 1. 设置渲染颜色并清屏
-  SDL_SetRenderDrawColor(sdl_renderer_, 20, 20, 24, 255);  // 深灰色背景
-  SDL_RenderClear(sdl_renderer_);
-
-  // 2. 渲染 ImGui 绘制数据（需要传入 renderer）
   ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), sdl_renderer_);
 
-  // 3. 呈现到屏幕
+  // 2. 呈现到屏幕
   SDL_RenderPresent(sdl_renderer_);
 }
 
@@ -461,11 +458,11 @@ void ImGuiVisualizer::renderScene() {
   static auto first_render_time = std::chrono::steady_clock::now();
   render_count++;
 
-  // if (render_count % 60 == 0) {
-  //   std::cout << "[Viz] renderScene called #" << render_count
-  //             << ", has_world_data=" << has_world_data_
-  //             << ", has_planning_result=" << has_planning_result_ << std::endl;
-  // }
+  if (render_count % 60 == 0) {
+    std::cout << "[Viz] renderScene called #" << render_count
+              << ", has_world_data=" << has_world_data_
+              << ", has_planning_result=" << has_planning_result_ << std::endl;
+  }
 
   // 创建主场景窗口
   ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_FirstUseEver);
@@ -915,13 +912,17 @@ void ImGuiVisualizer::renderScene() {
   // 🎨 1. 绘制 BEV 障碍物 - 圆形（可选）
   static int obstacle_log_count = 0;
   if (viz_options_.show_bev_obstacles) {
-    // if (obstacle_log_count++ % 60 == 0 && !bev_obstacles_.circles.empty()) {
-    //   std::cout << "[Viz]   Drawing " << bev_obstacles_.circles.size() << " BEV circles" << std::endl;
-    //   auto test_center = worldToScreen(bev_obstacles_.circles[0].center);
-    //   std::cout << "[Viz]     First circle: world=(" << bev_obstacles_.circles[0].center.x
-    //             << ", " << bev_obstacles_.circles[0].center.y
-    //             << ") -> screen=(" << test_center.x << ", " << test_center.y << ")" << std::endl;
-    // }
+    if (obstacle_log_count++ % 60 == 0) {
+      std::cout << "[Viz]   Drawing " << bev_obstacles_.circles.size() << " BEV circles, "
+                << bev_obstacles_.rectangles.size() << " rectangles, "
+                << bev_obstacles_.polygons.size() << " polygons" << std::endl;
+      if (!bev_obstacles_.circles.empty()) {
+        auto test_center = worldToScreen(bev_obstacles_.circles[0].center);
+        std::cout << "[Viz]     First circle: world=(" << bev_obstacles_.circles[0].center.x
+                  << ", " << bev_obstacles_.circles[0].center.y
+                  << ") -> screen=(" << test_center.x << ", " << test_center.y << ")" << std::endl;
+      }
+    }
 
     for (const auto& circle : bev_obstacles_.circles) {
     auto center = worldToScreen(circle.center);

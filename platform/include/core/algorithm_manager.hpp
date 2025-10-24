@@ -132,6 +132,24 @@ public:
   void resetStatistics() { stats_ = Statistics{}; }
 
   /**
+   * @brief 重置所有插件
+   *
+   * 调用所有感知插件和规划器插件的 reset() 方法。
+   * 用于场景切换或重新开始仿真时清理状态。
+   */
+  void reset();
+
+  /**
+   * @brief 加载新场景
+   *
+   * 停止当前仿真，重置所有插件，加载新场景，重新开始仿真。
+   *
+   * @param scenario_file 场景文件路径
+   * @return 是否成功加载
+   */
+  bool loadScenario(const std::string& scenario_file);
+
+  /**
    * @brief 获取当前配置
    */
   const Config& getConfig() const { return config_; }

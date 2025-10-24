@@ -3,6 +3,7 @@
 #include "viz/visualizer_interface.hpp"
 #include <SDL2/SDL.h>
 #include <chrono>
+#include <functional>
 #include <map>
 #include <string>
 
@@ -65,6 +66,20 @@ public:
   void shutdown() override;
   bool hasNewGoal(planning::Pose2d& new_goal) override;
   void setGoalSettingMode(bool enable) override;
+
+  // 🔧 场景加载功能
+  /**
+   * @brief 设置场景加载回调
+   * @param callback 场景加载回调函数，参数为场景文件路径
+   */
+  void setScenarioLoadCallback(std::function<void(const std::string&)> callback);
+
+  /**
+   * @brief 检查是否有新的场景加载请求
+   * @param scenario_path 输出参数：场景文件路径
+   * @return 是否有新的场景加载请求
+   */
+  bool hasScenarioLoadRequest(std::string& scenario_path);
 
 private:
   Config config_;
@@ -141,7 +156,13 @@ private:
   bool goal_setting_mode_ = false;        // 是否处于目标点设置模式
   bool has_new_goal_ = false;             // 是否有新的目标点被设置
   planning::Pose2d new_goal_;             // 新设置的目标点
-  
+
+  // 🔧 场景加载相关状态
+  std::function<void(const std::string&)> scenario_load_callback_;  // 场景加载回调
+  bool has_scenario_load_request_ = false;  // 是否有场景加载请求
+  std::string scenario_path_request_;       // 请求加载的场景路径
+  char scenario_path_input_[256] = "";      // 场景路径输入框缓冲区
+
   // 内部辅助函数
   void handleEvents();
   void renderScene();

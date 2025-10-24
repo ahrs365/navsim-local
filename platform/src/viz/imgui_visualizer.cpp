@@ -1519,10 +1519,24 @@ void ImGuiVisualizer::renderDebugPanel() {
   // 创建调试信息面板
   ImGui::SetNextWindowPos(ImVec2(1010, 0), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowSize(ImVec2(390, 900), ImGuiCond_FirstUseEver);
-  
+
   ImGui::Begin("Debug Info", nullptr, ImGuiWindowFlags_NoCollapse);
-  
+
   ImGui::Text("NavSim Local Visualizer");
+  ImGui::Separator();
+
+  // 🔧 场景加载功能
+  ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Scenario Management:");
+  ImGui::InputText("Scenario Path", scenario_path_input_, sizeof(scenario_path_input_));
+  ImGui::SameLine();
+  if (ImGui::Button("Load")) {
+    if (strlen(scenario_path_input_) > 0) {
+      scenario_path_request_ = std::string(scenario_path_input_);
+      has_scenario_load_request_ = true;
+      std::cout << "[ImGuiVisualizer] Scenario load requested: " << scenario_path_request_ << std::endl;
+    }
+  }
+  ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Example: ../scenarios/map1.json");
   ImGui::Separator();
   
   // 显示控制提示
@@ -1963,6 +1977,19 @@ bool ImGuiVisualizer::hasNewGoal(planning::Pose2d& new_goal) {
   if (has_new_goal_) {
     new_goal = new_goal_;
     has_new_goal_ = false;  // 重置标志
+    return true;
+  }
+  return false;
+}
+
+void ImGuiVisualizer::setScenarioLoadCallback(std::function<void(const std::string&)> callback) {
+  scenario_load_callback_ = callback;
+}
+
+bool ImGuiVisualizer::hasScenarioLoadRequest(std::string& scenario_path) {
+  if (has_scenario_load_request_) {
+    scenario_path = scenario_path_request_;
+    has_scenario_load_request_ = false;  // 重置标志
     return true;
   }
   return false;

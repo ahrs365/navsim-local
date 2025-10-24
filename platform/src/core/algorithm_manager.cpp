@@ -10,6 +10,7 @@
 #include "plugin/framework/config_loader.hpp"
 #include "plugin/preprocessing/preprocessing.hpp"
 #include "viz/visualizer_interface.hpp"
+#include "viz/imgui_visualizer.hpp"
 #include "sim/local_simulator.hpp"
 #include <iostream>
 #include <iomanip>
@@ -395,6 +396,72 @@ void AlgorithmManager::updateConfig(const Config& config) {
   initialize();
 }
 
+void AlgorithmManager::reset() {
+  std::cout << "[AlgorithmManager] Resetting all plugins..." << std::endl;
+
+  // 重置感知插件
+  if (perception_plugin_manager_) {
+    perception_plugin_manager_->reset();
+  }
+
+  // 重置规划器插件
+  if (planner_plugin_manager_) {
+    planner_plugin_manager_->reset();
+  }
+
+  // 重置统计信息
+  resetStatistics();
+
+  std::cout << "[AlgorithmManager] All plugins reset successfully" << std::endl;
+}
+
+bool AlgorithmManager::loadScenario(const std::string& scenario_file) {
+  std::cout << "[AlgorithmManager] Loading scenario: " << scenario_file << std::endl;
+
+  // 1. 检查文件是否存在
+  std::ifstream file(scenario_file);
+  if (!file.good()) {
+    std::cerr << "[AlgorithmManager] Scenario file not found: " << scenario_file << std::endl;
+    return false;
+  }
+  file.close();
+
+  // 2. 停止当前仿真循环（如果正在运行）
+  bool was_running = !simulation_should_stop_.load();
+  if (was_running) {
+    std::cout << "[AlgorithmManager] Stopping current simulation..." << std::endl;
+    stop_simulation_loop();
+    // 等待仿真循环停止
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
+  // 3. 重置所有插件
+  reset();
+
+  // 4. 重新加载场景到仿真器
+  if (local_simulator_) {
+    std::cout << "[AlgorithmManager] Loading scenario into simulator..." << std::endl;
+    if (!local_simulator_->load_scenario(scenario_file)) {
+      std::cerr << "[AlgorithmManager] Failed to load scenario into simulator" << std::endl;
+      return false;
+    }
+  } else {
+    std::cerr << "[AlgorithmManager] No local simulator available" << std::endl;
+    return false;
+  }
+
+  // 5. 重新开始仿真（如果之前在运行）
+  if (was_running) {
+    std::cout << "[AlgorithmManager] Restarting simulation with new scenario..." << std::endl;
+    simulation_should_stop_.store(false);
+    // 注意：这里不调用 run_simulation_loop()，因为它会阻塞
+    // 仿真循环会在下一次迭代时自动继续
+  }
+
+  std::cout << "[AlgorithmManager] Scenario loaded successfully: " << scenario_file << std::endl;
+  return true;
+}
+
 void AlgorithmManager::setBridge(Bridge* bridge, const std::string& connection_label) {
   bridge_ = bridge;
   connection_label_ = connection_label;
@@ -658,6 +725,23 @@ bool AlgorithmManager::run_simulation_loop(const std::atomic<bool>* external_int
     if (external_interrupt && external_interrupt->load()) {
       std::cout << "[AlgorithmManager] External interrupt received, stopping simulation..." << std::endl;
       break;
+    }
+
+    // 🔧 检查场景加载请求
+    if (visualizer_) {
+      // 尝试将 visualizer_ 转换为 ImGuiVisualizer
+      auto* imgui_viz = dynamic_cast<viz::ImGuiVisualizer*>(visualizer_.get());
+      if (imgui_viz) {
+        std::string scenario_path;
+        if (imgui_viz->hasScenarioLoadRequest(scenario_path)) {
+          std::cout << "[AlgorithmManager] Scenario load request received: " << scenario_path << std::endl;
+          if (loadScenario(scenario_path)) {
+            std::cout << "[AlgorithmManager] Scenario loaded successfully, continuing simulation..." << std::endl;
+          } else {
+            std::cerr << "[AlgorithmManager] Failed to load scenario: " << scenario_path << std::endl;
+          }
+        }
+      }
     }
 
     auto current_time = std::chrono::steady_clock::now();

@@ -76,11 +76,32 @@ void JpsPlannerPlugin::reset() {
   if (verbose_) {
     std::cout << "[JPSPlannerPlugin] Reset" << std::endl;
   }
+
   // Reset statistics
   total_plans_ = 0;
   successful_plans_ = 0;
   failed_plans_ = 0;
   total_planning_time_ms_ = 0.0;
+
+  // 🔧 清理 MSPlanner，下次规划时会重新创建
+  // 这样可以确保场景切换时使用新的 ESDF 地图和配置
+  if (msplanner_) {
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] Clearing MSPlanner (will recreate on next plan)" << std::endl;
+    }
+    msplanner_.reset();
+  }
+
+  // 🔧 清理 JPS planner，下次规划时会重新创建
+  if (jps_planner_) {
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] Clearing JPS planner (will recreate on next plan)" << std::endl;
+    }
+    jps_planner_.reset();
+  }
+
+  // 🔧 清理 ESDF 地图引用
+  esdf_map_.reset();
 }
 
 nlohmann::json JpsPlannerPlugin::getStatistics() const {
@@ -158,14 +179,17 @@ bool JpsPlannerPlugin::plan(const navsim::planning::PlanningContext& context,
     }
   }
 
-  // Create or update MSPlanner (trajectory optimizer)
-  // 🔧 注意：每次都重新创建 MSPlanner，因为优化器配置可能已更新
-  if (verbose_) {
-    std::cout << "[JPSPlannerPlugin] Creating MSPlanner (trajectory optimizer) with updated config..." << std::endl;
-  }
-  msplanner_ = std::make_shared<JPS::MSPlanner>(jps_config_.optimizer, esdf_map_);
-  if (verbose_) {
-    std::cout << "[JPSPlannerPlugin] MSPlanner created successfully" << std::endl;
+  // Create MSPlanner (trajectory optimizer) if not already created
+  // 🔧 优化：只在第一次规划或 reset() 后创建 MSPlanner
+  // 场景切换时，上层（AlgorithmManager）会调用 reset() 方法，触发重新创建
+  if (!msplanner_) {
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] Creating MSPlanner (trajectory optimizer)..." << std::endl;
+    }
+    msplanner_ = std::make_shared<JPS::MSPlanner>(jps_config_.optimizer, esdf_map_);
+    if (verbose_) {
+      std::cout << "[JPSPlannerPlugin] MSPlanner created successfully" << std::endl;
+    }
   }
 
   // Convert PlanningContext to JPS input

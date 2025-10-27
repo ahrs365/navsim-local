@@ -210,12 +210,38 @@ void ImGuiVisualizer::drawEgo(const planning::EgoVehicle& ego) {
                             ", y=" + formatDouble(ego.pose.y) +
                             ", yaw=" + formatDouble(ego.pose.yaw, 3);
   debug_info_["Ego Speed"] = formatDouble(std::hypot(ego.twist.vx, ego.twist.vy)) + " m/s";
-  
+
+  // 📊 更新历史数据（用于 v-t 和 omega-t 图）
+  // 从 debug_info_ 中获取仿真时间
+  auto sim_time_it = debug_info_.find("Simulation Time");
+  if (sim_time_it != debug_info_.end()) {
+    try {
+      float sim_time = std::stof(sim_time_it->second);
+      float velocity = std::hypot(ego.twist.vx, ego.twist.vy);
+      float omega = ego.twist.omega;
+
+      // 追加到历史数据（限制最大长度为 10000 个点，避免内存溢出）
+      if (history_time_.size() < 10000) {
+        history_time_.push_back(sim_time);
+        history_velocity_.push_back(velocity);
+        history_omega_.push_back(omega);
+      }
+    } catch (...) {
+      // 忽略解析错误
+    }
+  }
+
   // 更新视图中心（如果跟随自车）
   if (view_state_.follow_ego) {
     view_state_.center_x = ego.pose.x;
     view_state_.center_y = ego.pose.y;
   }
+}
+
+void ImGuiVisualizer::clearHistoryData() {
+  history_time_.clear();
+  history_velocity_.clear();
+  history_omega_.clear();
 }
 
 void ImGuiVisualizer::drawGoal(const planning::Pose2d& goal) {
@@ -351,6 +377,7 @@ void ImGuiVisualizer::updatePlanningContext(const planning::PlanningContext& con
 void ImGuiVisualizer::updatePlanningResult(const plugin::PlanningResult& result) {
   result_info_.clear();
   has_planning_result_ = true;
+  latest_planning_result_ = result;  // 存储完整的规划结果用于绘图
 
   result_info_["Planner"] = result.planner_name.empty() ? "Unknown" : result.planner_name;
   result_info_["Status"] = result.success ? "Success" : "Failure";
@@ -424,6 +451,9 @@ void ImGuiVisualizer::endFrame() {
   // 🎨 渲染图例面板
   renderLegendPanel();
 
+  // 🎨 渲染规划结果曲线图面板
+  renderPlotPanel();
+
   // 渲染 ImGui - SDL_Renderer 流程
   // ✅ 正确的渲染顺序：渲染 ImGui -> 呈现（不清屏，让 ImGui 自己管理背景）
 
@@ -446,9 +476,10 @@ void ImGuiVisualizer::renderScene() {
               << ", has_planning_result=" << has_planning_result_ << std::endl;
   }
 
-  // 创建主场景窗口
-  ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_FirstUseEver);
-  ImGui::SetNextWindowSize(ImVec2(1000, 900), ImGuiCond_FirstUseEver);
+  // 创建主场景窗口 - 左侧区域
+  // 位置：(0, 0)，尺寸：(1190, 850) - 与右侧 Debug Info 面板高度一致，留出 10px 间距
+  ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+  ImGui::SetNextWindowSize(ImVec2(1190, 850), ImGuiCond_Always);
 
   // 🕐 在窗口标题显示仿真时间
   std::string window_title = "Scene View";
@@ -1538,9 +1569,10 @@ void ImGuiVisualizer::addButtonLog(const std::string& log) {
 }
 
 void ImGuiVisualizer::renderDebugPanel() {
-  // 创建调试信息面板
-  ImGui::SetNextWindowPos(ImVec2(1010, 0), ImGuiCond_FirstUseEver);
-  ImGui::SetNextWindowSize(ImVec2(390, 900), ImGuiCond_FirstUseEver);
+  // 创建调试信息面板 - 右侧区域
+  // 位置：紧贴 Scene View 右侧，宽度600，高度850（与场景区域高度一致）
+  ImGui::SetNextWindowPos(ImVec2(1190, 0), ImGuiCond_Always);
+  ImGui::SetNextWindowSize(ImVec2(610, 850), ImGuiCond_Always);
 
   ImGui::Begin("Debug Info", nullptr, ImGuiWindowFlags_NoCollapse);
 
@@ -1636,6 +1668,7 @@ void ImGuiVisualizer::renderDebugPanel() {
   if (reset_clicked) {
     addButtonLog("Reset CLICKED (returned true)");
     std::cout << "[ImGuiVisualizer] Reset button clicked!" << std::endl;
+    clearHistoryData();  // 清空历史数据
     if (sim_reset_callback_) {
       sim_reset_callback_();
     }
@@ -1644,6 +1677,7 @@ void ImGuiVisualizer::renderDebugPanel() {
   if (reset_released && !reset_clicked) {
     addButtonLog("Reset MANUAL TRIGGER");
     std::cout << "[ImGuiVisualizer] Reset button manually triggered!" << std::endl;
+    clearHistoryData();  // 清空历史数据
     if (sim_reset_callback_) {
       sim_reset_callback_();
     }
@@ -1716,91 +1750,109 @@ void ImGuiVisualizer::renderDebugPanel() {
   ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Default dir: ../scenarios/");
   ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Example: map1.json or map2.json");
   ImGui::Separator();
-  
-  // 显示控制提示
-  ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Controls:");
-  ImGui::BulletText("F: Toggle follow ego");
-  ImGui::BulletText("+/-: Zoom in/out");
-  ImGui::BulletText("ESC: Close window");
-  ImGui::Separator();
 
-  ImGui::Text("Connection:");
-  ImGui::BulletText("Status: %s", connection_status_.connected ? "Connected" : "Disconnected");
-  if (!connection_status_.label.empty()) {
-    ImGui::BulletText("Target: %s", connection_status_.label.c_str());
+  // 🎨 可折叠菜单：显示控制提示
+  if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_None)) {
+    ImGui::BulletText("F: Toggle follow ego");
+    ImGui::BulletText("+/-: Zoom in/out");
+    ImGui::BulletText("ESC: Close window");
   }
-  if (!connection_status_.message.empty()) {
-    ImGui::BulletText("Detail: %s", connection_status_.message.c_str());
-  }
-  ImGui::Separator();
 
-  ImGui::Text("System Info:");
-  if (system_info_.general.empty()) {
-    ImGui::BulletText("No system info");
-  } else {
-    for (const auto& [key, value] : system_info_.general) {
-      ImGui::BulletText("%s: %s", key.c_str(), value.c_str());
+  // 🎨 可折叠菜单：连接状态
+  if (ImGui::CollapsingHeader("Connection", ImGuiTreeNodeFlags_None)) {
+    ImGui::BulletText("Status: %s", connection_status_.connected ? "Connected" : "Disconnected");
+    if (!connection_status_.label.empty()) {
+      ImGui::BulletText("Target: %s", connection_status_.label.c_str());
+    }
+    if (!connection_status_.message.empty()) {
+      ImGui::BulletText("Detail: %s", connection_status_.message.c_str());
     }
   }
-  ImGui::Separator();
 
-  ImGui::Text("Perception Plugins:");
-  if (system_info_.perception_plugins.empty()) {
-    ImGui::BulletText("None");
-  } else {
-    for (const auto& name : system_info_.perception_plugins) {
-      ImGui::BulletText("%s", name.c_str());
+  // 🎨 可折叠菜单：系统信息
+  if (ImGui::CollapsingHeader("System Info", ImGuiTreeNodeFlags_None)) {
+    if (system_info_.general.empty()) {
+      ImGui::BulletText("No system info");
+    } else {
+      for (const auto& [key, value] : system_info_.general) {
+        ImGui::BulletText("%s: %s", key.c_str(), value.c_str());
+      }
     }
   }
-  ImGui::Separator();
 
-  ImGui::Text("Planner Plugins:");
-  if (system_info_.planner_plugins.empty()) {
-    ImGui::BulletText("None");
-  } else {
-    for (const auto& name : system_info_.planner_plugins) {
-      ImGui::BulletText("%s", name.c_str());
+  // 🎨 可折叠菜单：感知插件
+  if (ImGui::CollapsingHeader("Perception Plugins", ImGuiTreeNodeFlags_None)) {
+    if (system_info_.perception_plugins.empty()) {
+      ImGui::BulletText("None");
+    } else {
+      for (const auto& name : system_info_.perception_plugins) {
+        ImGui::BulletText("%s", name.c_str());
+      }
     }
   }
-  ImGui::Separator();
 
-  // 显示视图状态
-  ImGui::Text("View State:");
-  ImGui::BulletText("Follow Ego: %s", view_state_.follow_ego ? "ON" : "OFF");
-  ImGui::BulletText("Zoom: %.2f", view_state_.zoom);
-  ImGui::BulletText("Center: (%.2f, %.2f)", view_state_.center_x, view_state_.center_y);
-  ImGui::Separator();
-
-  ImGui::Text("Planning Context:");
-  if (context_info_.empty()) {
-    ImGui::BulletText("Waiting for PlanningContext");
-  } else {
-    for (const auto& [key, value] : context_info_) {
-      ImGui::BulletText("%s: %s", key.c_str(), value.c_str());
+  // 🎨 可折叠菜单：规划插件
+  if (ImGui::CollapsingHeader("Planner Plugins", ImGuiTreeNodeFlags_None)) {
+    if (system_info_.planner_plugins.empty()) {
+      ImGui::BulletText("None");
+    } else {
+      for (const auto& name : system_info_.planner_plugins) {
+        ImGui::BulletText("%s", name.c_str());
+      }
     }
   }
-  ImGui::Separator();
 
-  ImGui::Text("Planning Result:");
-  if (!has_planning_result_) {
-    ImGui::BulletText("Waiting for PlanningResult");
-  } else {
-    for (const auto& [key, value] : result_info_) {
-      ImGui::BulletText("%s: %s", key.c_str(), value.c_str());
+  // 🎨 可折叠菜单：视图状态
+  if (ImGui::CollapsingHeader("View State", ImGuiTreeNodeFlags_None)) {
+    ImGui::BulletText("Follow Ego: %s", view_state_.follow_ego ? "ON" : "OFF");
+    ImGui::BulletText("Zoom: %.2f", view_state_.zoom);
+    ImGui::BulletText("Center: (%.2f, %.2f)", view_state_.center_x, view_state_.center_y);
+  }
+
+  // 🎨 可折叠菜单：规划上下文
+  if (ImGui::CollapsingHeader("Planning Context", ImGuiTreeNodeFlags_None)) {
+    if (context_info_.empty()) {
+      ImGui::BulletText("Waiting for PlanningContext");
+    } else {
+      for (const auto& [key, value] : context_info_) {
+        ImGui::BulletText("%s: %s", key.c_str(), value.c_str());
+      }
     }
   }
-  ImGui::Separator();
 
-  // 显示调试信息
-  ImGui::Text("Runtime Debug:");
-  if (debug_info_.empty()) {
-    ImGui::BulletText("No runtime data");
-  } else {
-    for (const auto& [key, value] : debug_info_) {
-      ImGui::BulletText("%s: %s", key.c_str(), value.c_str());
+  // 🎨 可折叠菜单：规划结果
+  if (ImGui::CollapsingHeader("Planning Result", ImGuiTreeNodeFlags_None)) {
+    if (!has_planning_result_) {
+      ImGui::BulletText("Waiting for PlanningResult");
+    } else {
+      for (const auto& [key, value] : result_info_) {
+        ImGui::BulletText("%s: %s", key.c_str(), value.c_str());
+      }
     }
   }
-  
+
+  // 🎨 可折叠菜单：运行时调试信息
+  if (ImGui::CollapsingHeader("Runtime Debug", ImGuiTreeNodeFlags_None)) {
+    if (debug_info_.empty()) {
+      ImGui::BulletText("No runtime data");
+    } else {
+      for (const auto& [key, value] : debug_info_) {
+        ImGui::BulletText("%s: %s", key.c_str(), value.c_str());
+      }
+    }
+  }
+
+  ImGui::Separator();
+
+  // 🎨 面板显示控制按钮
+  if (ImGui::Button(show_legend_panel_ ? "Hide Legend" : "Show Legend")) {
+    show_legend_panel_ = !show_legend_panel_;
+  }
+  ImGui::SameLine();
+  if (ImGui::Button(show_plot_panel_ ? "Hide Plots" : "Show Plots")) {
+    show_plot_panel_ = !show_plot_panel_;
+  }
+
   ImGui::End();
 }
 
@@ -1927,11 +1979,16 @@ std::string ImGuiVisualizer::formatDouble(double value, int precision) {
 }
 
 void ImGuiVisualizer::renderLegendPanel() {
-  // 创建图例面板（Legend Panel）
-  ImGui::SetNextWindowPos(ImVec2(1010, 450), ImGuiCond_FirstUseEver);
-  ImGui::SetNextWindowSize(ImVec2(390, 450), ImGuiCond_FirstUseEver);
+  // 只有在 show_legend_panel_ 为 true 时才显示
+  if (!show_legend_panel_) {
+    return;
+  }
 
-  ImGui::Begin("Legend & Visualization Options", nullptr, ImGuiWindowFlags_NoCollapse);
+  // 创建图例面板 - 浮动窗口，位置在右下角
+  ImGui::SetNextWindowPos(ImVec2(1200, 450), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
+
+  ImGui::Begin("Legend & Visualization Options", &show_legend_panel_, ImGuiWindowFlags_NoCollapse);
 
   ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Visualization Options");
   ImGui::Separator();
@@ -2194,6 +2251,184 @@ void ImGuiVisualizer::setSimulationControlCallbacks(
 
 void ImGuiVisualizer::updateSimulationStatus(bool is_paused) {
   simulation_is_paused_ = is_paused;
+}
+
+void ImGuiVisualizer::renderPlotPanel() {
+  // 只有在 show_plot_panel_ 为 true 时才显示
+  if (!show_plot_panel_) {
+    return;
+  }
+
+  // 创建曲线图面板 - 放置在窗口底部，横跨整个窗口宽度
+  // 位置：(0, 850)，尺寸：(1800, 550) - 增加高度以容纳完整的 4 个子图
+  ImGui::SetNextWindowPos(ImVec2(0, 850), ImGuiCond_Always);
+  ImGui::SetNextWindowSize(ImVec2(1800, 550), ImGuiCond_Always);
+
+  ImGui::Begin("Planning Result Plots", &show_plot_panel_, ImGuiWindowFlags_NoCollapse);
+
+  // 检查是否有规划结果数据
+  bool has_data = has_planning_result_ && latest_planning_result_.success && !latest_planning_result_.trajectory.empty();
+
+  if (!has_data) {
+    // 没有数据时，显示空的图表框架和提示信息
+    ImVec2 plot_size(ImGui::GetContentRegionAvail().x * 0.48f, 220);
+
+    // 第一行：v-s 图和 omega-s 图
+    ImGui::Text("Velocity vs Distance");
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.5f + 20);
+    ImGui::Text("Angular Velocity vs Distance");
+
+    // 左上：v-s 图（空）
+    ImGui::BeginChild("PlotVS", plot_size, true);
+    ImGui::Text("v (m/s) vs s (m)");
+    ImVec2 center(plot_size.x * 0.5f, plot_size.y * 0.5f);
+    ImGui::SetCursorPos(ImVec2(center.x - 80, center.y - 10));
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Waiting for planning data...");
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    // 右上：omega-s 图（空）
+    ImGui::BeginChild("PlotOmegaS", plot_size, true);
+    ImGui::Text("omega (rad/s) vs s (m)");
+    ImGui::SetCursorPos(ImVec2(center.x - 80, center.y - 10));
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Waiting for planning data...");
+    ImGui::EndChild();
+
+    // 第二行：v-t 图和 omega-t 图
+    ImGui::Text("Velocity vs Time");
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.5f + 20);
+    ImGui::Text("Angular Velocity vs Time");
+
+    // 左下：v-t 图（空）
+    ImGui::BeginChild("PlotVT", plot_size, true);
+    ImGui::Text("v (m/s) vs t (s)");
+    ImGui::SetCursorPos(ImVec2(center.x - 80, center.y - 10));
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Waiting for planning data...");
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    // 右下：omega-t 图（空）
+    ImGui::BeginChild("PlotOmegaT", plot_size, true);
+    ImGui::Text("omega (rad/s) vs t (s)");
+    ImGui::SetCursorPos(ImVec2(center.x - 80, center.y - 10));
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Waiting for planning data...");
+    ImGui::EndChild();
+
+    ImGui::End();
+    return;
+  }
+
+  // 有数据时，提取轨迹数据并绘制曲线
+  const auto& trajectory = latest_planning_result_.trajectory;
+
+  // 准备数据：计算累积路程 s
+  std::vector<float> s_values;  // 累积路程
+  std::vector<float> v_values;  // 线速度
+  std::vector<float> omega_values;  // 角速度
+  std::vector<float> t_values;  // 时间戳
+
+  float cumulative_s = 0.0f;
+  s_values.push_back(cumulative_s);
+  v_values.push_back(std::sqrt(trajectory[0].twist.vx * trajectory[0].twist.vx +
+                                trajectory[0].twist.vy * trajectory[0].twist.vy));
+  omega_values.push_back(trajectory[0].twist.omega);
+  t_values.push_back(trajectory[0].time_from_start);
+
+  for (size_t i = 1; i < trajectory.size(); ++i) {
+    // 计算两点之间的距离
+    float dx = trajectory[i].pose.x - trajectory[i-1].pose.x;
+    float dy = trajectory[i].pose.y - trajectory[i-1].pose.y;
+    float ds = std::sqrt(dx * dx + dy * dy);
+    cumulative_s += ds;
+
+    s_values.push_back(cumulative_s);
+    v_values.push_back(std::sqrt(trajectory[i].twist.vx * trajectory[i].twist.vx +
+                                  trajectory[i].twist.vy * trajectory[i].twist.vy));
+    omega_values.push_back(trajectory[i].twist.omega);
+    t_values.push_back(trajectory[i].time_from_start);
+  }
+
+  // 2x2 网格布局
+  ImVec2 plot_size(ImGui::GetContentRegionAvail().x * 0.48f, 230);
+
+  // 第一行：v-s 图和 omega-s 图（当前规划轨迹段）
+  ImGui::Text("Velocity vs Distance (Current Trajectory)");
+  ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.5f + 20);
+  ImGui::Text("Angular Velocity vs Distance (Current Trajectory)");
+
+  // 左上：v-s 图（当前规划轨迹段）
+  ImGui::BeginChild("PlotVS", plot_size, true);
+  ImGui::Text("v (m/s) vs s (m)");
+  if (!v_values.empty()) {
+    // 注意：ImGui::PlotLines 的 X 轴是索引，我们需要手动标注 s 的范围
+    float max_s = s_values.empty() ? 0.0f : s_values.back();
+    char overlay[64];
+    snprintf(overlay, sizeof(overlay), "s: 0.0 - %.2f m", max_s);
+    ImGui::PlotLines("##v-s", v_values.data(), v_values.size(), 0, overlay,
+                     0.0f, FLT_MAX, ImVec2(plot_size.x - 20, plot_size.y - 40));
+  } else {
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No data");
+  }
+  ImGui::EndChild();
+
+  ImGui::SameLine();
+
+  // 右上：omega-s 图（当前规划轨迹段）
+  ImGui::BeginChild("PlotOmegaS", plot_size, true);
+  ImGui::Text("omega (rad/s) vs s (m)");
+  if (!omega_values.empty()) {
+    float max_s = s_values.empty() ? 0.0f : s_values.back();
+    char overlay[64];
+    snprintf(overlay, sizeof(overlay), "s: 0.0 - %.2f m", max_s);
+    ImGui::PlotLines("##omega-s", omega_values.data(), omega_values.size(), 0, overlay,
+                     FLT_MIN, FLT_MAX, ImVec2(plot_size.x - 20, plot_size.y - 40));
+  } else {
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No data");
+  }
+  ImGui::EndChild();
+
+  // 第二行：v-t 图和 omega-t 图（累积历史数据）
+  ImGui::Text("Velocity vs Time (History)");
+  ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.5f + 20);
+  ImGui::Text("Angular Velocity vs Time (History)");
+
+  // 左下：v-t 图（历史数据）
+  ImGui::BeginChild("PlotVT", plot_size, true);
+  ImGui::Text("v (m/s) vs t (s)");
+  if (!history_velocity_.empty()) {
+    float max_t = history_time_.empty() ? 0.0f : history_time_.back();
+    char overlay[64];
+    snprintf(overlay, sizeof(overlay), "t: 0.0 - %.2f s", max_t);
+    ImGui::PlotLines("##v-t", history_velocity_.data(), history_velocity_.size(), 0, overlay,
+                     0.0f, FLT_MAX, ImVec2(plot_size.x - 20, plot_size.y - 40));
+  } else {
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No history data");
+  }
+  ImGui::EndChild();
+
+  ImGui::SameLine();
+
+  // 右下：omega-t 图（历史数据）
+  ImGui::BeginChild("PlotOmegaT", plot_size, true);
+  ImGui::Text("omega (rad/s) vs t (s)");
+  if (!history_omega_.empty()) {
+    float max_t = history_time_.empty() ? 0.0f : history_time_.back();
+    char overlay[64];
+    snprintf(overlay, sizeof(overlay), "t: 0.0 - %.2f s", max_t);
+    ImGui::PlotLines("##omega-t", history_omega_.data(), history_omega_.size(), 0, overlay,
+                     FLT_MIN, FLT_MAX, ImVec2(plot_size.x - 20, plot_size.y - 40));
+  } else {
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No history data");
+  }
+  ImGui::EndChild();
+
+  ImGui::Separator();
+  ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
+                     "Note: v-s and omega-s show current trajectory; v-t and omega-t show cumulative history");
+
+  ImGui::End();
 }
 
 } // namespace viz

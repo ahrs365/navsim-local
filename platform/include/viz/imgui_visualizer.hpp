@@ -26,14 +26,14 @@ namespace viz {
 class ImGuiVisualizer : public IVisualizer {
 public:
   struct Config {
-    int window_width = 1400;
-    int window_height = 900;
+    int window_width = 1800;   // 窗口宽度（合理尺寸）
+    int window_height = 1400;  // 窗口高度（增加到 1400 以容纳完整的 Planning Result Plots）
     const char* window_title = "NavSim Local Visualizer";
-    
+
     // 视图配置
     double view_range = 30.0;  // 视图范围（米）
     double pixels_per_meter = 20.0;  // 像素/米比例
-    
+
     // 颜色配置
     bool dark_mode = true;
   };
@@ -149,7 +149,7 @@ private:
     bool show_occupancy_grid = true;   // 显示栅格地图
     bool show_esdf_map = true;         // 显示 ESDF 地图
     bool show_coordinate_axes = true;  // 显示坐标轴
-    bool show_grid_lines = true;       // 显示网格线
+    bool show_grid_lines = false;      // 显示网格线（默认关闭，避免视觉干扰）
 
     // Debug paths for JPS planner
     bool show_debug_paths = true;           // 总开关：显示JPS调试路径
@@ -167,8 +167,15 @@ private:
 
   bool has_world_data_ = false;
   bool has_planning_result_ = false;
+  plugin::PlanningResult latest_planning_result_;  // 存储最新的规划结果用于绘图
   std::chrono::steady_clock::time_point last_world_update_;
   std::string last_result_summary_;
+
+  // 📊 历史数据存储（用于 v-t 和 omega-t 图）
+  std::vector<float> history_time_;      // 历史时间戳（仿真时间）
+  std::vector<float> history_velocity_;  // 历史线速度
+  std::vector<float> history_omega_;     // 历史角速度
+  void clearHistoryData();               // 清空历史数据（Reset 时调用）
 
   // 目标点设置相关状态
   bool goal_setting_mode_ = false;        // 是否处于目标点设置模式
@@ -189,12 +196,17 @@ private:
   std::vector<std::string> button_logs_;       // 按钮点击日志（最多保留10条）
   void addButtonLog(const std::string& log);   // 添加按钮日志
 
+  // 🎨 面板显示状态控制
+  bool show_legend_panel_ = false;             // Legend & Visualization Options 面板默认隐藏
+  bool show_plot_panel_ = true;                // 规划结果曲线图面板默认显示
+
   // 内部辅助函数
   void handleEvents();
   void renderScene();
   void renderDebugPanel();
-  void renderLegendPanel();  // 🎨 新增：渲染图例面板
-  void renderLoadingScreen();  // 🎨 新增：渲染加载画面
+  void renderLegendPanel();     // 🎨 渲染图例面板
+  void renderLoadingScreen();   // 🎨 渲染加载画面
+  void renderPlotPanel();       // 🎨 新增：渲染规划结果曲线图面板
   
   // 坐标转换
   struct Point2D { float x, y; };

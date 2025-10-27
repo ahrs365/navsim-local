@@ -2,6 +2,7 @@
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
 #include <imgui_impl_sdlrenderer2.h>  // 使用 SDL_Renderer 后端
+#include <implot.h>  // 添加 ImPlot 支持
 #include <iostream>
 #include <cmath>
 #include <algorithm>
@@ -104,6 +105,9 @@ bool ImGuiVisualizer::initialize() {
   // 初始化 ImGui 后端（使用 SDL_Renderer）
   ImGui_ImplSDL2_InitForSDLRenderer(window_, sdl_renderer_);
   ImGui_ImplSDLRenderer2_Init(sdl_renderer_);
+
+  // 初始化 ImPlot
+  ImPlot::CreateContext();
 
   initialized_ = true;
 
@@ -1921,6 +1925,9 @@ void ImGuiVisualizer::shutdown() {
 
   // std::cout << "[ImGuiVisualizer] Shutting down..." << std::endl;
 
+  // 清理 ImPlot
+  ImPlot::DestroyContext();
+
   // 清理 ImGui
   ImGui_ImplSDLRenderer2_Shutdown();
   ImGui_ImplSDL2_Shutdown();
@@ -2266,167 +2273,127 @@ void ImGuiVisualizer::renderPlotPanel() {
 
   ImGui::Begin("Planning Result Plots", &show_plot_panel_, ImGuiWindowFlags_NoCollapse);
 
-  // 检查是否有规划结果数据
-  bool has_data = has_planning_result_ && latest_planning_result_.success && !latest_planning_result_.trajectory.empty();
+  // 检查是否有规划结果数据（用于 v-s 和 omega-s 图）
+  bool has_trajectory_data = has_planning_result_ && latest_planning_result_.success && !latest_planning_result_.trajectory.empty();
 
-  if (!has_data) {
-    // 没有数据时，显示空的图表框架和提示信息
-    ImVec2 plot_size(ImGui::GetContentRegionAvail().x * 0.48f, 220);
+  // 检查是否有历史数据（用于 v-t 和 omega-t 图）
+  bool has_history_data = !history_time_.empty();
 
-    // 第一行：v-s 图和 omega-s 图
-    ImGui::Text("Velocity vs Distance");
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.5f + 20);
-    ImGui::Text("Angular Velocity vs Distance");
+  // 准备轨迹数据（用于 v-s 和 omega-s 图）
+  std::vector<double> s_values, v_values, omega_values;
 
-    // 左上：v-s 图（空）
-    ImGui::BeginChild("PlotVS", plot_size, true);
-    ImGui::Text("v (m/s) vs s (m)");
-    ImVec2 center(plot_size.x * 0.5f, plot_size.y * 0.5f);
-    ImGui::SetCursorPos(ImVec2(center.x - 80, center.y - 10));
-    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Waiting for planning data...");
-    ImGui::EndChild();
+  if (has_trajectory_data) {
+    const auto& trajectory = latest_planning_result_.trajectory;
 
-    ImGui::SameLine();
-
-    // 右上：omega-s 图（空）
-    ImGui::BeginChild("PlotOmegaS", plot_size, true);
-    ImGui::Text("omega (rad/s) vs s (m)");
-    ImGui::SetCursorPos(ImVec2(center.x - 80, center.y - 10));
-    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Waiting for planning data...");
-    ImGui::EndChild();
-
-    // 第二行：v-t 图和 omega-t 图
-    ImGui::Text("Velocity vs Time");
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.5f + 20);
-    ImGui::Text("Angular Velocity vs Time");
-
-    // 左下：v-t 图（空）
-    ImGui::BeginChild("PlotVT", plot_size, true);
-    ImGui::Text("v (m/s) vs t (s)");
-    ImGui::SetCursorPos(ImVec2(center.x - 80, center.y - 10));
-    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Waiting for planning data...");
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-
-    // 右下：omega-t 图（空）
-    ImGui::BeginChild("PlotOmegaT", plot_size, true);
-    ImGui::Text("omega (rad/s) vs t (s)");
-    ImGui::SetCursorPos(ImVec2(center.x - 80, center.y - 10));
-    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Waiting for planning data...");
-    ImGui::EndChild();
-
-    ImGui::End();
-    return;
-  }
-
-  // 有数据时，提取轨迹数据并绘制曲线
-  const auto& trajectory = latest_planning_result_.trajectory;
-
-  // 准备数据：计算累积路程 s
-  std::vector<float> s_values;  // 累积路程
-  std::vector<float> v_values;  // 线速度
-  std::vector<float> omega_values;  // 角速度
-  std::vector<float> t_values;  // 时间戳
-
-  float cumulative_s = 0.0f;
-  s_values.push_back(cumulative_s);
-  v_values.push_back(std::sqrt(trajectory[0].twist.vx * trajectory[0].twist.vx +
-                                trajectory[0].twist.vy * trajectory[0].twist.vy));
-  omega_values.push_back(trajectory[0].twist.omega);
-  t_values.push_back(trajectory[0].time_from_start);
-
-  for (size_t i = 1; i < trajectory.size(); ++i) {
-    // 计算两点之间的距离
-    float dx = trajectory[i].pose.x - trajectory[i-1].pose.x;
-    float dy = trajectory[i].pose.y - trajectory[i-1].pose.y;
-    float ds = std::sqrt(dx * dx + dy * dy);
-    cumulative_s += ds;
-
+    double cumulative_s = 0.0;
     s_values.push_back(cumulative_s);
-    v_values.push_back(std::sqrt(trajectory[i].twist.vx * trajectory[i].twist.vx +
-                                  trajectory[i].twist.vy * trajectory[i].twist.vy));
-    omega_values.push_back(trajectory[i].twist.omega);
-    t_values.push_back(trajectory[i].time_from_start);
+    v_values.push_back(std::hypot(trajectory[0].twist.vx, trajectory[0].twist.vy));
+    omega_values.push_back(trajectory[0].twist.omega);
+
+    for (size_t i = 1; i < trajectory.size(); ++i) {
+      double dx = trajectory[i].pose.x - trajectory[i-1].pose.x;
+      double dy = trajectory[i].pose.y - trajectory[i-1].pose.y;
+      cumulative_s += std::hypot(dx, dy);
+
+      s_values.push_back(cumulative_s);
+      v_values.push_back(std::hypot(trajectory[i].twist.vx, trajectory[i].twist.vy));
+      omega_values.push_back(trajectory[i].twist.omega);
+    }
   }
 
   // 2x2 网格布局
-  ImVec2 plot_size(ImGui::GetContentRegionAvail().x * 0.48f, 230);
+  float plot_width = ImGui::GetContentRegionAvail().x * 0.48f;
+  float plot_height = 230.0f;
 
   // 第一行：v-s 图和 omega-s 图（当前规划轨迹段）
-  ImGui::Text("Velocity vs Distance (Current Trajectory)");
-  ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.5f + 20);
-  ImGui::Text("Angular Velocity vs Distance (Current Trajectory)");
-
-  // 左上：v-s 图（当前规划轨迹段）
-  ImGui::BeginChild("PlotVS", plot_size, true);
-  ImGui::Text("v (m/s) vs s (m)");
-  if (!v_values.empty()) {
-    // 注意：ImGui::PlotLines 的 X 轴是索引，我们需要手动标注 s 的范围
-    float max_s = s_values.empty() ? 0.0f : s_values.back();
-    char overlay[64];
-    snprintf(overlay, sizeof(overlay), "s: 0.0 - %.2f m", max_s);
-    ImGui::PlotLines("##v-s", v_values.data(), v_values.size(), 0, overlay,
-                     0.0f, FLT_MAX, ImVec2(plot_size.x - 20, plot_size.y - 40));
-  } else {
-    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No data");
+  if (ImPlot::BeginPlot("Velocity vs Distance", ImVec2(plot_width, plot_height))) {
+    ImPlot::SetupAxes("Distance s (m)", "Velocity v (m/s)");
+    if (has_trajectory_data && !s_values.empty()) {
+      // 自适应 X 轴范围（距离）
+      ImPlot::SetupAxisLimits(ImAxis_X1, 0, s_values.back() * 1.05, ImPlotCond_Always);
+      // 自适应 Y 轴范围（速度），留 10% 边距，允许负值（倒车）
+      auto [min_v, max_v] = std::minmax_element(v_values.begin(), v_values.end());
+      double v_range = std::max(0.1, static_cast<double>(*max_v - *min_v));
+      ImPlot::SetupAxisLimits(ImAxis_Y1,
+        *min_v - v_range * 0.1,
+        *max_v + v_range * 0.1,
+        ImPlotCond_Always);
+      ImPlot::PlotLine("v", s_values.data(), v_values.data(), s_values.size());
+    } else {
+      ImPlot::SetupAxisLimits(ImAxis_X1, 0, 10, ImPlotCond_Always);
+      ImPlot::SetupAxisLimits(ImAxis_Y1, -2, 2, ImPlotCond_Always);
+    }
+    ImPlot::EndPlot();
   }
-  ImGui::EndChild();
 
   ImGui::SameLine();
 
-  // 右上：omega-s 图（当前规划轨迹段）
-  ImGui::BeginChild("PlotOmegaS", plot_size, true);
-  ImGui::Text("omega (rad/s) vs s (m)");
-  if (!omega_values.empty()) {
-    float max_s = s_values.empty() ? 0.0f : s_values.back();
-    char overlay[64];
-    snprintf(overlay, sizeof(overlay), "s: 0.0 - %.2f m", max_s);
-    ImGui::PlotLines("##omega-s", omega_values.data(), omega_values.size(), 0, overlay,
-                     FLT_MIN, FLT_MAX, ImVec2(plot_size.x - 20, plot_size.y - 40));
-  } else {
-    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No data");
+  if (ImPlot::BeginPlot("Angular Velocity vs Distance", ImVec2(plot_width, plot_height))) {
+    ImPlot::SetupAxes("Distance s (m)", "Angular Velocity omega (rad/s)");
+    if (has_trajectory_data && !s_values.empty()) {
+      // 自适应 X 轴范围（距离）
+      ImPlot::SetupAxisLimits(ImAxis_X1, 0, s_values.back() * 1.05, ImPlotCond_Always);
+      // 自适应 Y 轴范围（角速度），留 10% 边距，允许负值
+      auto [min_omega, max_omega] = std::minmax_element(omega_values.begin(), omega_values.end());
+      double omega_range = std::max(0.1, static_cast<double>(*max_omega - *min_omega));
+      ImPlot::SetupAxisLimits(ImAxis_Y1,
+        *min_omega - omega_range * 0.1,
+        *max_omega + omega_range * 0.1,
+        ImPlotCond_Always);
+      ImPlot::PlotLine("omega", s_values.data(), omega_values.data(), s_values.size());
+    } else {
+      ImPlot::SetupAxisLimits(ImAxis_X1, 0, 10, ImPlotCond_Always);
+      ImPlot::SetupAxisLimits(ImAxis_Y1, -1, 1, ImPlotCond_Always);
+    }
+    ImPlot::EndPlot();
   }
-  ImGui::EndChild();
 
   // 第二行：v-t 图和 omega-t 图（累积历史数据）
-  ImGui::Text("Velocity vs Time (History)");
-  ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.5f + 20);
-  ImGui::Text("Angular Velocity vs Time (History)");
-
-  // 左下：v-t 图（历史数据）
-  ImGui::BeginChild("PlotVT", plot_size, true);
-  ImGui::Text("v (m/s) vs t (s)");
-  if (!history_velocity_.empty()) {
-    float max_t = history_time_.empty() ? 0.0f : history_time_.back();
-    char overlay[64];
-    snprintf(overlay, sizeof(overlay), "t: 0.0 - %.2f s", max_t);
-    ImGui::PlotLines("##v-t", history_velocity_.data(), history_velocity_.size(), 0, overlay,
-                     0.0f, FLT_MAX, ImVec2(plot_size.x - 20, plot_size.y - 40));
-  } else {
-    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No history data");
+  if (ImPlot::BeginPlot("Velocity vs Time", ImVec2(plot_width, plot_height))) {
+    ImPlot::SetupAxes("Time t (s)", "Velocity v (m/s)");
+    if (has_history_data) {
+      // 自适应 X 轴范围（时间）
+      ImPlot::SetupAxisLimits(ImAxis_X1, 0, history_time_.back() * 1.05, ImPlotCond_Always);
+      // 自适应 Y 轴范围（速度），留 10% 边距，允许负值（倒车）
+      auto [min_v, max_v] = std::minmax_element(history_velocity_.begin(), history_velocity_.end());
+      double v_range = std::max(0.1, static_cast<double>(*max_v - *min_v));
+      ImPlot::SetupAxisLimits(ImAxis_Y1,
+        *min_v - v_range * 0.1,
+        *max_v + v_range * 0.1,
+        ImPlotCond_Always);
+      ImPlot::PlotLine("v", history_time_.data(), history_velocity_.data(), history_time_.size());
+    } else {
+      ImPlot::SetupAxisLimits(ImAxis_X1, 0, 10, ImPlotCond_Always);
+      ImPlot::SetupAxisLimits(ImAxis_Y1, -2, 2, ImPlotCond_Always);
+    }
+    ImPlot::EndPlot();
   }
-  ImGui::EndChild();
 
   ImGui::SameLine();
 
-  // 右下：omega-t 图（历史数据）
-  ImGui::BeginChild("PlotOmegaT", plot_size, true);
-  ImGui::Text("omega (rad/s) vs t (s)");
-  if (!history_omega_.empty()) {
-    float max_t = history_time_.empty() ? 0.0f : history_time_.back();
-    char overlay[64];
-    snprintf(overlay, sizeof(overlay), "t: 0.0 - %.2f s", max_t);
-    ImGui::PlotLines("##omega-t", history_omega_.data(), history_omega_.size(), 0, overlay,
-                     FLT_MIN, FLT_MAX, ImVec2(plot_size.x - 20, plot_size.y - 40));
-  } else {
-    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No history data");
+  if (ImPlot::BeginPlot("Angular Velocity vs Time", ImVec2(plot_width, plot_height))) {
+    ImPlot::SetupAxes("Time t (s)", "Angular Velocity omega (rad/s)");
+    if (has_history_data) {
+      // 自适应 X 轴范围（时间）
+      ImPlot::SetupAxisLimits(ImAxis_X1, 0, history_time_.back() * 1.05, ImPlotCond_Always);
+      // 自适应 Y 轴范围（角速度），留 10% 边距，允许负值
+      auto [min_omega, max_omega] = std::minmax_element(history_omega_.begin(), history_omega_.end());
+      double omega_range = std::max(0.1, static_cast<double>(*max_omega - *min_omega));
+      ImPlot::SetupAxisLimits(ImAxis_Y1,
+        *min_omega - omega_range * 0.1,
+        *max_omega + omega_range * 0.1,
+        ImPlotCond_Always);
+      ImPlot::PlotLine("omega", history_time_.data(), history_omega_.data(), history_time_.size());
+    } else {
+      ImPlot::SetupAxisLimits(ImAxis_X1, 0, 10, ImPlotCond_Always);
+      ImPlot::SetupAxisLimits(ImAxis_Y1, -1, 1, ImPlotCond_Always);
+    }
+    ImPlot::EndPlot();
   }
-  ImGui::EndChild();
 
   ImGui::Separator();
   ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
-                     "Note: v-s and omega-s show current trajectory; v-t and omega-t show cumulative history");
+                     "Note: Top row shows current trajectory; Bottom row shows cumulative history");
 
   ImGui::End();
 }

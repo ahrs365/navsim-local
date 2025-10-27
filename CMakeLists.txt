@@ -101,6 +101,12 @@ if(ENABLE_VISUALIZATION)
         message(FATAL_ERROR "ImGui not found at ${IMGUI_DIR}. Please run: cd third_party && git clone https://github.com/ocornut/imgui.git")
     endif()
 
+    # 添加 ImPlot（假设在 third_party/implot）
+    set(IMPLOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/implot)
+    if(NOT EXISTS ${IMPLOT_DIR})
+        message(FATAL_ERROR "ImPlot not found at ${IMPLOT_DIR}. Please download ImPlot files.")
+    endif()
+
     # 创建 ImGui 库 - 使用 SDL_Renderer 后端（不依赖 OpenGL）
     add_library(imgui STATIC
         ${IMGUI_DIR}/imgui.cpp
@@ -110,11 +116,15 @@ if(ENABLE_VISUALIZATION)
         ${IMGUI_DIR}/imgui_widgets.cpp
         ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
         ${IMGUI_DIR}/backends/imgui_impl_sdlrenderer2.cpp  # 使用 SDL_Renderer!
+        # ImPlot 源文件
+        ${IMPLOT_DIR}/implot.cpp
+        ${IMPLOT_DIR}/implot_items.cpp
     )
 
     target_include_directories(imgui PUBLIC
         ${IMGUI_DIR}
         ${IMGUI_DIR}/backends
+        ${IMPLOT_DIR}  # 添加 ImPlot 头文件路径
         ${SDL2_INCLUDE_DIRS}
     )
 

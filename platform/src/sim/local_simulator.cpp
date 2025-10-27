@@ -545,6 +545,19 @@ proto::WorldTick LocalSimulator::to_world_tick() const {
   ego_twist->set_vy(impl_->world_state_.ego_twist.vy);
   ego_twist->set_omega(impl_->world_state_.ego_twist.omega);
 
+  // 🔍 调试：每秒打印一次自车状态
+  static uint64_t last_ego_log_tick = 0;
+  if (world_tick.tick_id() % 30 == 0 && world_tick.tick_id() != last_ego_log_tick) {
+    std::cout << "[LocalSimulator::to_world_tick] Ego state:" << std::endl;
+    std::cout << "  Pose: (" << impl_->world_state_.ego_pose.x
+              << ", " << impl_->world_state_.ego_pose.y
+              << ", " << impl_->world_state_.ego_pose.yaw << ")" << std::endl;
+    std::cout << "  Twist: vx=" << impl_->world_state_.ego_twist.vx
+              << ", vy=" << impl_->world_state_.ego_twist.vy
+              << ", omega=" << impl_->world_state_.ego_twist.omega << std::endl;
+    last_ego_log_tick = world_tick.tick_id();
+  }
+
   // 目标
   auto* goal = world_tick.mutable_goal();
   auto* goal_pose = goal->mutable_pose();
@@ -657,9 +670,54 @@ void LocalSimulator::Impl::integrate_dynamic_obstacles(double dt) {
 }
 
 void LocalSimulator::Impl::integrate_ego_motion(double dt) {
-  // 目前不积分自车运动，等待外部算法控制
-  // 这个函数预留给未来的直接控制模式
-  (void)dt;
+  // 🚗 自车运动积分：根据当前速度更新位姿
+  // 使用简单的欧拉积分（一阶积分）
+
+  // 获取当前速度
+  double vx = world_state_.ego_twist.vx;      // 纵向速度 (m/s)
+  double vy = world_state_.ego_twist.vy;      // 横向速度 (m/s)
+  double omega = world_state_.ego_twist.omega; // 角速度 (rad/s)
+
+  // 获取当前位姿
+  double x = world_state_.ego_pose.x;
+  double y = world_state_.ego_pose.y;
+  double yaw = world_state_.ego_pose.yaw;
+
+  // 🔍 调试：每秒打印一次积分前的状态
+  static uint64_t last_integrate_log = 0;
+  if (world_state_.frame_id % 30 == 0 && world_state_.frame_id != last_integrate_log) {
+    std::cout << "[LocalSimulator::integrate_ego_motion] BEFORE integration:" << std::endl;
+    std::cout << "  dt=" << dt << "s" << std::endl;
+    std::cout << "  Pose: (" << x << ", " << y << ", " << yaw << ")" << std::endl;
+    std::cout << "  Twist: vx=" << vx << ", vy=" << vy << ", omega=" << omega << std::endl;
+    last_integrate_log = world_state_.frame_id;
+  }
+
+  // 积分更新位姿
+  // 方法：在车体坐标系下积分，然后转换到世界坐标系
+  // 车体坐标系：x轴向前，y轴向左
+
+  // 世界坐标系下的速度分量
+  double vx_world = vx * std::cos(yaw) - vy * std::sin(yaw);
+  double vy_world = vx * std::sin(yaw) + vy * std::cos(yaw);
+
+  // 更新位置（欧拉积分）
+  world_state_.ego_pose.x = x + vx_world * dt;
+  world_state_.ego_pose.y = y + vy_world * dt;
+
+  // 更新朝向
+  world_state_.ego_pose.yaw = normalize_angle(yaw + omega * dt);
+
+  // 🔍 调试：打印积分后的状态
+  if (world_state_.frame_id % 30 == 0) {
+    std::cout << "[LocalSimulator::integrate_ego_motion] AFTER integration:" << std::endl;
+    std::cout << "  Pose: (" << world_state_.ego_pose.x
+              << ", " << world_state_.ego_pose.y
+              << ", " << world_state_.ego_pose.yaw << ")" << std::endl;
+    std::cout << "  Delta: dx=" << (world_state_.ego_pose.x - x)
+              << ", dy=" << (world_state_.ego_pose.y - y)
+              << ", dyaw=" << (world_state_.ego_pose.yaw - yaw) << std::endl;
+  }
 }
 
 void LocalSimulator::Impl::check_and_handle_collisions() {

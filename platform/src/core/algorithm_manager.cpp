@@ -1003,68 +1003,60 @@ bool AlgorithmManager::process_simulation_step(double dt) {
 
   // 4. 将规划结果应用到仿真器
   if (planning_success && plan_update.trajectory_size() > 0) {
-    // 计算当前应该跟踪的轨迹点索引
-    // 使用简单的时间索引：假设轨迹点间隔为 dt
-    static double accumulated_time = 0.0;
-    accumulated_time += dt;
-
-    // 根据累积时间找到对应的轨迹点
-    int target_index = 0;
-    double min_time_diff = std::abs(plan_update.trajectory(0).t() - accumulated_time);
-
-    for (int i = 1; i < plan_update.trajectory_size(); ++i) {
-      double time_diff = std::abs(plan_update.trajectory(i).t() - accumulated_time);
-      if (time_diff < min_time_diff) {
-        min_time_diff = time_diff;
-        target_index = i;
-      } else {
-        // 时间差开始增大，说明已经找到最接近的点
-        break;
+    // 🔧 调试：打印前几个轨迹点的速度
+    static bool first_print = true;
+    if (first_print && plan_update.trajectory_size() > 0) {
+      std::cout << "\n[DEBUG] First 10 trajectory points:" << std::endl;
+      for (int i = 0; i < std::min(10, plan_update.trajectory_size()); ++i) {
+        const auto& pt = plan_update.trajectory(i);
+        std::cout << "  [" << i << "] t=" << pt.t()
+                  << "s, pos=(" << pt.x() << ", " << pt.y() << ")"
+                  << ", vx=" << pt.vx() << ", omega=" << pt.omega() << std::endl;
       }
+      first_print = false;
     }
 
-    // 限制索引范围，避免跟踪太远的点
-    // 使用前瞻时间：0.1秒（约3个仿真步）
-    const double lookahead_time = 0.1;
-    int lookahead_index = 0;
+    // 🚗 新的控制策略：使用前瞻点的速度
+    // 原因：第一个点的速度通常是 0（从静止开始），需要使用前瞻点
+
+    // 前瞻策略：使用 0.2 秒后的轨迹点（约 6 个仿真步）
+    const double lookahead_time = 0.2;  // 200ms 前瞻
+    int control_index = 0;
+
+    // 找到时间最接近 lookahead_time 的点
     for (int i = 0; i < plan_update.trajectory_size(); ++i) {
       if (plan_update.trajectory(i).t() >= lookahead_time) {
-        lookahead_index = i;
+        control_index = i;
         break;
       }
     }
 
-    // 使用前瞻点或当前时间点（取较大者）
-    int control_index = std::max(lookahead_index, std::min(target_index, 10));
+    // 如果轨迹太短，至少使用第 5 个点（避免使用初始的 0 速度点）
+    if (control_index == 0 && plan_update.trajectory_size() > 5) {
+      control_index = 5;
+    }
 
     const auto& control_point = plan_update.trajectory(control_index);
-
-    // 更新自车位置和速度（简单的轨迹跟踪）
-    planning::Pose2d new_pose;
-    new_pose.x = control_point.x();
-    new_pose.y = control_point.y();
-    new_pose.yaw = control_point.yaw();
 
     planning::Twist2d new_twist;
     new_twist.vx = control_point.vx();
     new_twist.vy = control_point.vy();
     new_twist.omega = control_point.omega();
 
-    // 应用到仿真器
-    local_simulator_->set_ego_pose(new_pose);
+    // 只设置速度，不设置位置！
     local_simulator_->set_ego_twist(new_twist);
 
     if (config_.verbose_logging && world_state.frame_id % 30 == 0) {  // 每秒打印一次
       std::cout << "[AlgorithmManager] Step " << world_state.frame_id
                 << ": Planning success, " << plan_update.trajectory_size()
                 << " trajectory points generated" << std::endl;
-      std::cout << "  Control index: " << control_index
-                << " (t=" << control_point.t() << "s, accumulated_time="
-                << accumulated_time << "s)" << std::endl;
-      std::cout << "  Ego pose: (" << new_pose.x << ", " << new_pose.y
-                << ", " << new_pose.yaw << ")" << std::endl;
-      std::cout << "  Ego twist: (" << new_twist.vx << ", " << new_twist.vy
-                << ", " << new_twist.omega << ")" << std::endl;
+      std::cout << "  Using trajectory point [" << control_index << "]: t=" << control_point.t() << "s" << std::endl;
+      std::cout << "  Ego twist: vx=" << new_twist.vx
+                << ", vy=" << new_twist.vy
+                << ", omega=" << new_twist.omega << std::endl;
+      std::cout << "  Current ego pose: (" << world_state.ego_pose.x
+                << ", " << world_state.ego_pose.y
+                << ", " << world_state.ego_pose.yaw << ")" << std::endl;
     }
   }
 

@@ -16,6 +16,15 @@ planning::EgoVehicle BasicDataConverter::convertEgo(
   const auto& twist = world_tick.ego().twist();
   ego.twist = {twist.vx(), twist.vy(), twist.omega()};
 
+  // 🔍 调试：每秒打印一次规划器接收到的自车状态
+  static uint64_t last_log_tick = 0;
+  if (world_tick.tick_id() % 30 == 0 && world_tick.tick_id() != last_log_tick) {
+    std::cout << "[BasicDataConverter::convertEgo] Planner received ego state:" << std::endl;
+    std::cout << "  Pose: (" << ego.pose.x << ", " << ego.pose.y << ", " << ego.pose.yaw << ")" << std::endl;
+    std::cout << "  Twist: vx=" << ego.twist.vx << ", vy=" << ego.twist.vy << ", omega=" << ego.twist.omega << std::endl;
+    last_log_tick = world_tick.tick_id();
+  }
+
   // 时间戳
   ego.timestamp = world_tick.stamp();
 

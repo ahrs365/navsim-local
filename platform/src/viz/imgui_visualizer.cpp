@@ -177,39 +177,21 @@ void ImGuiVisualizer::beginFrame() {
 void ImGuiVisualizer::handleEvents() {
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
+    // 让 ImGui 先处理事件
     ImGui_ImplSDL2_ProcessEvent(&event);
-    
+
     if (event.type == SDL_QUIT) {
       should_close_ = true;
     }
-    
-    if (event.type == SDL_WINDOWEVENT && 
+
+    if (event.type == SDL_WINDOWEVENT &&
         event.window.event == SDL_WINDOWEVENT_CLOSE &&
         event.window.windowID == SDL_GetWindowID(window_)) {
       should_close_ = true;
     }
 
-    // 处理键盘事件
-    if (event.type == SDL_KEYDOWN) {
-      switch (event.key.keysym.sym) {
-        case SDLK_ESCAPE:
-          should_close_ = true;
-          break;
-        case SDLK_f:
-          view_state_.follow_ego = !view_state_.follow_ego;
-          // std::cout << "[ImGuiVisualizer] Follow ego: "
-          //           << (view_state_.follow_ego ? "ON" : "OFF") << std::endl;
-          break;
-        case SDLK_EQUALS:  // '+' key
-          view_state_.zoom *= 1.2;
-          // std::cout << "[ImGuiVisualizer] Zoom: " << view_state_.zoom << std::endl;
-          break;
-        case SDLK_MINUS:   // '-' key
-          view_state_.zoom /= 1.2;
-          // std::cout << "[ImGuiVisualizer] Zoom: " << view_state_.zoom << std::endl;
-          break;
-      }
-    }
+    // 不再处理键盘快捷键，完全交给 ImGui 处理
+    // 这样可以确保输入框能正常工作
 
     // 鼠标点击事件将在renderScene中处理，以便获取正确的画布坐标
   }
@@ -477,9 +459,11 @@ void ImGuiVisualizer::renderScene() {
 
   ImGui::Begin(window_title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse);
 
-  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  // 获取画布位置和大小
   ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
   ImVec2 canvas_size = ImGui::GetContentRegionAvail();
+
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
   // static int log_count = 0;
   // if (log_count++ % 60 == 0) {
@@ -1507,12 +1491,50 @@ void ImGuiVisualizer::renderScene() {
         // 退出目标点设置模式
         setGoalSettingMode(false);
 
-        // std::cout << "[ImGuiVisualizer] New goal set at: (" << world_x << ", " << world_y << ")" << std::endl;
+        std::cout << "[ImGuiVisualizer] New goal set at: (" << world_x << ", " << world_y << ")" << std::endl;
       }
     }
   }
 
   ImGui::End();
+}
+
+void ImGuiVisualizer::addButtonLog(const std::string& log) {
+  // 避免悬停事件产生太多日志（每秒最多记录一次悬停）
+  static std::string last_hover_log;
+  static auto last_hover_time = std::chrono::steady_clock::now();
+
+  if (log.find("HOVERED") != std::string::npos) {
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_hover_time).count();
+
+    // 如果是相同的悬停事件且距离上次记录不到1秒，跳过
+    if (log == last_hover_log && elapsed < 1000) {
+      return;
+    }
+
+    last_hover_log = log;
+    last_hover_time = now;
+  }
+
+  // 添加时间戳
+  auto now = std::chrono::system_clock::now();
+  auto time_t = std::chrono::system_clock::to_time_t(now);
+  auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+    now.time_since_epoch()) % 1000;
+
+  char time_str[32];
+  std::strftime(time_str, sizeof(time_str), "%H:%M:%S", std::localtime(&time_t));
+
+  std::string timestamped_log = std::string(time_str) + "." +
+    std::to_string(ms.count()) + " - " + log;
+
+  button_logs_.push_back(timestamped_log);
+
+  // 只保留最近20条日志
+  if (button_logs_.size() > 20) {
+    button_logs_.erase(button_logs_.begin());
+  }
 }
 
 void ImGuiVisualizer::renderDebugPanel() {
@@ -1525,18 +1547,167 @@ void ImGuiVisualizer::renderDebugPanel() {
   ImGui::Text("NavSim Local Visualizer");
   ImGui::Separator();
 
-  // 🔧 场景加载功能
-  ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Scenario Management:");
-  ImGui::InputText("Scenario Path", scenario_path_input_, sizeof(scenario_path_input_));
-  ImGui::SameLine();
-  if (ImGui::Button("Load")) {
-    if (strlen(scenario_path_input_) > 0) {
-      scenario_path_request_ = std::string(scenario_path_input_);
-      has_scenario_load_request_ = true;
-      std::cout << "[ImGuiVisualizer] Scenario load requested: " << scenario_path_request_ << std::endl;
+  // 🎮 仿真控制按钮区域
+  ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Simulation Control:");
+
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 5));
+
+  // Start 按钮（绿色）
+  ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.4f, 0.9f, 0.4f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+  bool start_clicked = ImGui::Button("Start", ImVec2(80, 0));
+  bool start_hovered = ImGui::IsItemHovered();
+  bool start_active = ImGui::IsItemActive();
+  ImGui::PopStyleColor(3);
+
+  if (start_hovered) {
+    addButtonLog("Start HOVERED");
+  }
+  if (start_active) {
+    addButtonLog("Start ACTIVE (mouse down)");
+  }
+  if (start_clicked) {
+    addButtonLog("Start CLICKED (returned true)");
+    std::cout << "[ImGuiVisualizer] Start button clicked!" << std::endl;
+    if (sim_start_callback_) {
+      sim_start_callback_();
     }
   }
-  ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Example: ../scenarios/map1.json");
+
+  ImGui::SameLine();
+
+  // Pause 按钮（黄色）
+  ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.8f, 0.3f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.9f, 0.4f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.7f, 0.2f, 1.0f));
+  bool pause_clicked = ImGui::Button("Pause", ImVec2(80, 0));
+  bool pause_hovered = ImGui::IsItemHovered();
+  bool pause_active = ImGui::IsItemActive();
+  bool pause_released = pause_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left);
+  ImGui::PopStyleColor(3);
+
+  if (pause_hovered) {
+    addButtonLog("Pause HOVERED");
+  }
+  if (pause_active) {
+    addButtonLog("Pause ACTIVE (mouse down)");
+  }
+  if (pause_released) {
+    addButtonLog("Pause RELEASED (manual detection)");
+  }
+  if (pause_clicked) {
+    addButtonLog("Pause CLICKED (returned true)");
+    std::cout << "[ImGuiVisualizer] Pause button clicked!" << std::endl;
+    if (sim_pause_callback_) {
+      sim_pause_callback_();
+    }
+  }
+  // 手动触发回调（如果检测到释放）
+  if (pause_released && !pause_clicked) {
+    addButtonLog("Pause MANUAL TRIGGER");
+    std::cout << "[ImGuiVisualizer] Pause button manually triggered!" << std::endl;
+    if (sim_pause_callback_) {
+      sim_pause_callback_();
+    }
+  }
+
+  ImGui::SameLine();
+
+  // Reset 按钮（红色）
+  ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.4f, 0.4f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+  bool reset_clicked = ImGui::Button("Reset", ImVec2(80, 0));
+  bool reset_hovered = ImGui::IsItemHovered();
+  bool reset_active = ImGui::IsItemActive();
+  bool reset_released = reset_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left);
+  ImGui::PopStyleColor(3);
+
+  if (reset_hovered) {
+    addButtonLog("Reset HOVERED");
+  }
+  if (reset_active) {
+    addButtonLog("Reset ACTIVE (mouse down)");
+  }
+  if (reset_released) {
+    addButtonLog("Reset RELEASED (manual detection)");
+  }
+  if (reset_clicked) {
+    addButtonLog("Reset CLICKED (returned true)");
+    std::cout << "[ImGuiVisualizer] Reset button clicked!" << std::endl;
+    if (sim_reset_callback_) {
+      sim_reset_callback_();
+    }
+  }
+  // 手动触发回调（如果检测到释放）
+  if (reset_released && !reset_clicked) {
+    addButtonLog("Reset MANUAL TRIGGER");
+    std::cout << "[ImGuiVisualizer] Reset button manually triggered!" << std::endl;
+    if (sim_reset_callback_) {
+      sim_reset_callback_();
+    }
+  }
+
+  ImGui::PopStyleVar();
+
+  // 显示仿真状态
+  ImGui::SameLine();
+  if (simulation_is_paused_) {
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[PAUSED]");
+  } else {
+    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "[RUNNING]");
+  }
+
+  // 按钮日志显示区域
+  ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Button Logs:");
+  ImGui::BeginChild("ButtonLogs", ImVec2(0, 150), true, ImGuiWindowFlags_HorizontalScrollbar);
+  for (const auto& log : button_logs_) {
+    ImGui::TextWrapped("%s", log.c_str());
+  }
+  // 自动滚动到底部
+  if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+    ImGui::SetScrollHereY(1.0f);
+  }
+  ImGui::EndChild();
+
+  ImGui::Separator();
+
+  // 🔧 场景加载功能
+  ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Load Scenario:");
+
+  // 输入框（设置宽度为 180 像素）
+  ImGui::PushItemWidth(180);
+  // 使用 ImGuiInputTextFlags_EnterReturnsTrue 标志，按回车键也可以加载
+  bool enter_pressed = ImGui::InputText("##ScenarioFile", scenario_path_input_,
+                                         sizeof(scenario_path_input_),
+                                         ImGuiInputTextFlags_EnterReturnsTrue);
+  ImGui::PopItemWidth();
+
+  ImGui::SameLine();
+  bool load_clicked = ImGui::Button("Load");
+
+  // 按回车键或点击 Load 按钮都可以加载
+  if ((enter_pressed || load_clicked) && strlen(scenario_path_input_) > 0) {
+    // 构建完整路径：../scenarios/ + 用户输入
+    std::string filename = scenario_path_input_;
+    std::string full_path;
+
+    // 如果用户输入的是完整路径（包含 / 或 ..），直接使用
+    if (filename.find('/') != std::string::npos || filename.find("..") != std::string::npos) {
+      full_path = filename;
+    } else {
+      // 否则，在 ../scenarios/ 目录下查找
+      full_path = "../scenarios/" + filename;
+    }
+
+    scenario_path_request_ = full_path;
+    has_scenario_load_request_ = true;
+    std::cout << "[ImGuiVisualizer] Scenario load requested: " << scenario_path_request_ << std::endl;
+  }
+
+  ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Default dir: ../scenarios/");
+  ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Example: map1.json or map2.json");
   ImGui::Separator();
   
   // 显示控制提示
@@ -2002,6 +2173,19 @@ void ImGuiVisualizer::setGoalSettingMode(bool enable) {
   // } else {
   //   std::cout << "[ImGuiVisualizer] Goal setting mode disabled." << std::endl;
   // }
+}
+
+void ImGuiVisualizer::setSimulationControlCallbacks(
+  std::function<void()> start_callback,
+  std::function<void()> pause_callback,
+  std::function<void()> reset_callback) {
+  sim_start_callback_ = start_callback;
+  sim_pause_callback_ = pause_callback;
+  sim_reset_callback_ = reset_callback;
+}
+
+void ImGuiVisualizer::updateSimulationStatus(bool is_paused) {
+  simulation_is_paused_ = is_paused;
 }
 
 } // namespace viz

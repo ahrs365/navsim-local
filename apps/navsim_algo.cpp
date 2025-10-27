@@ -244,6 +244,9 @@ int run_local_simulation(const CommandLineArgs& args) {
   // 4. 连接仿真器和算法管理器
   algorithm_manager.set_local_simulator(simulator);
 
+  // 5. 保存当前场景文件路径（用于重置功能）
+  algorithm_manager.set_current_scenario(args.scenario_file);
+
   std::cout << "[Main] Starting local simulation..." << std::endl;
 
   // 5. 运行仿真循环

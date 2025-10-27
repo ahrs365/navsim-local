@@ -79,6 +79,12 @@ public:
   void set_local_simulator(std::shared_ptr<sim::LocalSimulator> simulator);
 
   /**
+   * @brief 设置当前场景文件路径（用于重置功能）
+   * @param scenario_file 场景文件路径
+   */
+  void set_current_scenario(const std::string& scenario_file);
+
+  /**
    * @brief 处理世界状态，生成规划结果
    * @param world_tick 输入的世界状态
    * @param deadline 规划截止时间
@@ -179,11 +185,42 @@ public:
   }
 
   /**
+   * @brief 开始/恢复仿真
+   */
+  void startSimulation();
+
+  /**
+   * @brief 暂停仿真
+   */
+  void pauseSimulation();
+
+  /**
+   * @brief 检查仿真是否暂停
+   */
+  bool isSimulationPaused() const {
+    return simulation_paused_.load();
+  }
+
+  /**
+   * @brief 重置仿真（重新加载当前场景）
+   */
+  void resetSimulation();
+
+  /**
    * @brief 在等待数据时渲染空闲帧，确保窗口保持响应
    */
   void renderIdleFrame();
 
 private:
+  /**
+   * @brief 执行完整的系统重置（内部方法）
+   *
+   * 重置所有组件到初始状态：
+   * - 重置所有插件（感知、规划）
+   * - 重置 LocalSimulator
+   * - 清空可视化器缓存
+   */
+  void performFullReset();
   Config config_;
   Statistics stats_;
 
@@ -207,6 +244,8 @@ private:
   // 仿真状态
   std::atomic<bool> simulation_started_{false};
   std::atomic<bool> simulation_should_stop_{false};
+  std::atomic<bool> simulation_paused_{true};  // 默认启动时暂停
+  std::string current_scenario_file_;  // 当前加载的场景文件路径
 
   // 内部函数
   void setupPluginSystem();

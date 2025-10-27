@@ -68,6 +68,11 @@ public:
     return esdf_map_;
   }
 
+  /**
+   * @brief 重置插件状态
+   */
+  void reset() override;
+
 private:
   // ========== 配置参数 ==========
 

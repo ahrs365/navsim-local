@@ -180,6 +180,13 @@ bool LocalSimulator::load_scenario(const std::string& scenario_file) {
   std::cout << "  Dynamic obstacles: " << impl_->world_state_.dynamic_obstacles.size() << std::endl;
   std::cout << "  Static obstacles: " << impl_->world_state_.static_obstacles.size() << std::endl;
 
+  // 调试：打印前3个动态障碍物的速度
+  for (size_t i = 0; i < std::min(size_t(3), impl_->world_state_.dynamic_obstacles.size()); ++i) {
+    const auto& obs = impl_->world_state_.dynamic_obstacles[i];
+    std::cout << "    Obstacle " << i << ": pos=(" << obs.pose.x << ", " << obs.pose.y
+              << "), vel=(" << obs.twist.vx << ", " << obs.twist.vy << ")" << std::endl;
+  }
+
   return true;
 }
 
@@ -227,6 +234,17 @@ void LocalSimulator::reset() {
   }
 
   std::cout << "[LocalSimulator] Reset to initial state" << std::endl;
+  std::cout << "  Ego: (" << impl_->world_state_.ego_pose.x << ", "
+            << impl_->world_state_.ego_pose.y << ", "
+            << impl_->world_state_.ego_pose.yaw << ")" << std::endl;
+  std::cout << "  Dynamic obstacles: " << impl_->world_state_.dynamic_obstacles.size() << std::endl;
+
+  // 调试：打印前3个动态障碍物的速度
+  for (size_t i = 0; i < std::min(size_t(3), impl_->world_state_.dynamic_obstacles.size()); ++i) {
+    const auto& obs = impl_->world_state_.dynamic_obstacles[i];
+    std::cout << "    Obstacle " << i << ": pos=(" << obs.pose.x << ", " << obs.pose.y
+              << "), vel=(" << obs.twist.vx << ", " << obs.twist.vy << ")" << std::endl;
+  }
 }
 
 bool LocalSimulator::step(double dt) {

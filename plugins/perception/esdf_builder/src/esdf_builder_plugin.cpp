@@ -343,6 +343,25 @@ bool ESDFBuilderPlugin::isInDynamicObstacle(double x, double y, const planning::
   return std::abs(local_x) <= obs.width / 2.0 && std::abs(local_y) <= obs.length / 2.0;
 }
 
+void ESDFBuilderPlugin::reset() {
+  // 清空占据栅格
+  if (!occupancy_grid_.empty()) {
+    std::fill(occupancy_grid_.begin(), occupancy_grid_.end(), 0);
+  }
+
+  // 重新初始化 ESDF 地图（清空所有缓存）
+  if (esdf_map_) {
+    navsim::perception::ESDFMap::Config esdf_config;
+    esdf_config.resolution = resolution_;
+    esdf_config.map_width = map_width_;
+    esdf_config.map_height = map_height_;
+    esdf_config.max_distance = max_distance_;
+    esdf_map_->initialize(esdf_config);
+  }
+
+  std::cout << "[ESDFBuilder] Plugin reset complete" << std::endl;
+}
+
 } // namespace perception
 } // namespace plugins
 } // namespace navsim

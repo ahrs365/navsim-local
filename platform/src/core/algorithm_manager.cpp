@@ -39,6 +39,19 @@ bool AlgorithmManager::initialize() {
       visualizer_ = viz::createVisualizer(true);
       if (visualizer_ && visualizer_->initialize()) {
         std::cout << "[AlgorithmManager] Visualizer initialized successfully" << std::endl;
+
+        // 🎮 设置仿真控制回调
+        auto* imgui_viz = dynamic_cast<viz::ImGuiVisualizer*>(visualizer_.get());
+        if (imgui_viz) {
+          imgui_viz->setSimulationControlCallbacks(
+            [this]() { this->startSimulation(); },   // Start callback
+            [this]() { this->pauseSimulation(); },   // Pause callback
+            [this]() { this->resetSimulation(); }    // Reset callback
+          );
+          // 初始状态为暂停
+          imgui_viz->updateSimulationStatus(true);
+          std::cout << "[AlgorithmManager] Simulation control callbacks set" << std::endl;
+        }
       } else {
         std::cerr << "[AlgorithmManager] Failed to initialize visualizer" << std::endl;
         visualizer_.reset();
@@ -415,6 +428,31 @@ void AlgorithmManager::reset() {
   std::cout << "[AlgorithmManager] All plugins reset successfully" << std::endl;
 }
 
+void AlgorithmManager::performFullReset() {
+  std::cout << "[AlgorithmManager] Performing full system reset..." << std::endl;
+
+  // 1. 重置所有插件（清空内部状态和缓存）
+  reset();
+
+  // 2. 重置 LocalSimulator（恢复到初始状态）
+  if (local_simulator_) {
+    std::cout << "[AlgorithmManager] Resetting LocalSimulator..." << std::endl;
+    local_simulator_->reset();
+  }
+
+  // 3. 清空可视化器的缓存数据
+  if (visualizer_) {
+    std::cout << "[AlgorithmManager] Clearing visualizer cache..." << std::endl;
+    // 发送空的规划结果以清空轨迹显示
+    plugin::PlanningResult empty_result;
+    empty_result.success = false;
+    empty_result.planner_name = "";
+    visualizer_->updatePlanningResult(empty_result);
+  }
+
+  std::cout << "[AlgorithmManager] Full system reset complete" << std::endl;
+}
+
 bool AlgorithmManager::loadScenario(const std::string& scenario_file) {
   std::cout << "[AlgorithmManager] Loading scenario: " << scenario_file << std::endl;
 
@@ -435,8 +473,8 @@ bool AlgorithmManager::loadScenario(const std::string& scenario_file) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
-  // 3. 重置所有插件
-  reset();
+  // 3. 执行完整的系统重置
+  performFullReset();
 
   // 4. 重新加载场景到仿真器
   if (local_simulator_) {
@@ -450,7 +488,10 @@ bool AlgorithmManager::loadScenario(const std::string& scenario_file) {
     return false;
   }
 
-  // 5. 重新开始仿真（如果之前在运行）
+  // 5. 保存当前场景文件路径
+  current_scenario_file_ = scenario_file;
+
+  // 6. 重新开始仿真（如果之前在运行）
   if (was_running) {
     std::cout << "[AlgorithmManager] Restarting simulation with new scenario..." << std::endl;
     simulation_should_stop_.store(false);
@@ -458,8 +499,67 @@ bool AlgorithmManager::loadScenario(const std::string& scenario_file) {
     // 仿真循环会在下一次迭代时自动继续
   }
 
+  // 7. 加载新场景后默认暂停，等待用户点击 Start
+  simulation_paused_.store(true);
+
   std::cout << "[AlgorithmManager] Scenario loaded successfully: " << scenario_file << std::endl;
   return true;
+}
+
+void AlgorithmManager::startSimulation() {
+  simulation_paused_.store(false);
+  std::cout << "[AlgorithmManager] Simulation started/resumed" << std::endl;
+
+  // 启动 LocalSimulator（如果有）
+  if (local_simulator_) {
+    local_simulator_->start();
+  }
+
+  // 更新可视化器状态
+  if (visualizer_) {
+    auto* imgui_viz = dynamic_cast<viz::ImGuiVisualizer*>(visualizer_.get());
+    if (imgui_viz) {
+      imgui_viz->updateSimulationStatus(false);
+    }
+  }
+}
+
+void AlgorithmManager::pauseSimulation() {
+  simulation_paused_.store(true);
+  std::cout << "[AlgorithmManager] Simulation paused" << std::endl;
+
+  // 暂停 LocalSimulator（如果有）
+  if (local_simulator_) {
+    local_simulator_->pause();
+  }
+
+  // 更新可视化器状态
+  if (visualizer_) {
+    auto* imgui_viz = dynamic_cast<viz::ImGuiVisualizer*>(visualizer_.get());
+    if (imgui_viz) {
+      imgui_viz->updateSimulationStatus(true);
+    }
+  }
+}
+
+void AlgorithmManager::resetSimulation() {
+  std::cout << "[AlgorithmManager] Resetting simulation..." << std::endl;
+
+  // 1. 暂停仿真
+  pauseSimulation();
+
+  // 2. 执行完整的系统重置
+  performFullReset();
+
+  // 3. 重新加载当前场景（如果有）
+  if (!current_scenario_file_.empty() && local_simulator_) {
+    std::cout << "[AlgorithmManager] Reloading current scenario: " << current_scenario_file_ << std::endl;
+    if (!local_simulator_->load_scenario(current_scenario_file_)) {
+      std::cerr << "[AlgorithmManager] Failed to reload scenario" << std::endl;
+    }
+  }
+
+  std::cout << "[AlgorithmManager] Simulation reset complete (paused, waiting for Start)" << std::endl;
 }
 
 void AlgorithmManager::setBridge(Bridge* bridge, const std::string& connection_label) {
@@ -680,6 +780,11 @@ void AlgorithmManager::set_local_simulator(std::shared_ptr<sim::LocalSimulator> 
   }
 }
 
+void AlgorithmManager::set_current_scenario(const std::string& scenario_file) {
+  current_scenario_file_ = scenario_file;
+  std::cout << "[AlgorithmManager] Current scenario set to: " << scenario_file << std::endl;
+}
+
 bool AlgorithmManager::run_simulation_loop(const std::atomic<bool>* external_interrupt) {
   if (!local_simulator_) {
     std::cerr << "[AlgorithmManager] LocalSimulator not set" << std::endl;
@@ -747,6 +852,20 @@ bool AlgorithmManager::run_simulation_loop(const std::atomic<bool>* external_int
     auto current_time = std::chrono::steady_clock::now();
     auto elapsed = current_time - last_step_time;
 
+    // 🎮 检查仿真是否暂停
+    if (simulation_paused_.load()) {
+      // 暂停时仍然渲染可视化界面，但不执行仿真步进
+      if (visualizer_) {
+        visualizer_->beginFrame();
+        visualizer_->showDebugInfo("Simulation Status", "PAUSED");
+        visualizer_->endFrame();
+      }
+
+      // 短暂休眠避免CPU占用过高
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      continue;  // 跳过本次循环，不执行仿真步进
+    }
+
     // 控制循环频率
     if (elapsed >= loop_period) {
       double dt = std::chrono::duration<double>(elapsed).count();
@@ -770,6 +889,7 @@ bool AlgorithmManager::run_simulation_loop(const std::atomic<bool>* external_int
           std::ostringstream fps_stream;
           fps_stream << std::fixed << std::setprecision(1) << current_fps << " Hz";
           visualizer_->showDebugInfo("Loop Frequency", fps_stream.str());
+          visualizer_->showDebugInfo("Simulation Status", "RUNNING");
         }
 
         frame_count = 0;

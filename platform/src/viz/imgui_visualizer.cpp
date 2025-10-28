@@ -224,7 +224,11 @@ void ImGuiVisualizer::drawEgo(const planning::EgoVehicle& ego) {
   debug_info_["Ego Pose"] = "x=" + formatDouble(ego.pose.x) +
                             ", y=" + formatDouble(ego.pose.y) +
                             ", yaw=" + formatDouble(ego.pose.yaw, 3);
-  debug_info_["Ego Speed"] = formatDouble(std::hypot(ego.twist.vx, ego.twist.vy)) + " m/s";
+  const double forward_speed = ego.twist.vx;
+  const double lateral_speed = ego.twist.vy;
+  const double speed_mag = std::hypot(forward_speed, lateral_speed);
+  debug_info_["Ego Speed"] = formatDouble(forward_speed) + " m/s";
+  debug_info_["|Speed|"] = formatDouble(speed_mag) + " m/s";
 
   // 📊 更新历史数据（用于 v-t 和 omega-t 图）
   // 从 debug_info_ 中获取仿真时间
@@ -232,7 +236,7 @@ void ImGuiVisualizer::drawEgo(const planning::EgoVehicle& ego) {
   if (sim_time_it != debug_info_.end()) {
     try {
       float sim_time = std::stof(sim_time_it->second);
-      float velocity = std::hypot(ego.twist.vx, ego.twist.vy);
+      float velocity = static_cast<float>(forward_speed);
       float omega = ego.twist.omega;
 
       // 追加到历史数据（限制最大长度为 10000 个点，避免内存溢出）
@@ -1206,19 +1210,6 @@ void ImGuiVisualizer::renderScene() {
       );
     }
 
-    // 绘制速度箭头
-    if (std::abs(dyn_obs.current_twist.vx) > 0.01 || std::abs(dyn_obs.current_twist.vy) > 0.01) {
-      auto vel_end = worldToScreen(
-        dyn_obs.current_pose.x + dyn_obs.current_twist.vx,
-        dyn_obs.current_pose.y + dyn_obs.current_twist.vy
-      );
-      draw_list->AddLine(
-        ImVec2(center.x, center.y),
-        ImVec2(vel_end.x, vel_end.y),
-        IM_COL32(255, 255, 0, 255),  // 黄色箭头
-        2.0f
-      );
-    }
   }
   }  // 🎨 结束动态障碍物绘制
 
@@ -1313,6 +1304,8 @@ void ImGuiVisualizer::renderScene() {
       std::cout << "[Viz]   Position error: " << tracking_data_.position_error * 1000 << " mm" << std::endl;
     }
 
+    auto actual_screen = worldToScreen(tracking_data_.actual_pose.x, tracking_data_.actual_pose.y);
+
     // 绘制目标位置点（红色圆圈）
     auto target_screen = worldToScreen(tracking_data_.target_pose.x, tracking_data_.target_pose.y);
     draw_list->AddCircle(
@@ -1323,11 +1316,18 @@ void ImGuiVisualizer::renderScene() {
     );
 
     // 绘制目标位置的方向箭头
-    float target_yaw = tracking_data_.target_pose.yaw;
+    double target_yaw = tracking_data_.target_pose.yaw;
+    if (tracking_has_prev_yaw_) {
+      double delta = normalizeAngle(target_yaw - tracking_prev_yaw_);
+      target_yaw = tracking_prev_yaw_ + delta;
+    }
+    tracking_prev_yaw_ = target_yaw;
+    tracking_has_prev_yaw_ = true;
+
     float arrow_length = 20.0f;
     auto target_arrow_end = worldToScreen(
-      tracking_data_.target_pose.x + arrow_length * 0.05 * cos(target_yaw),
-      tracking_data_.target_pose.y + arrow_length * 0.05 * sin(target_yaw)
+      tracking_data_.target_pose.x + arrow_length * 0.05f * static_cast<float>(std::cos(target_yaw)),
+      tracking_data_.target_pose.y + arrow_length * 0.05f * static_cast<float>(std::sin(target_yaw))
     );
     draw_list->AddLine(
       ImVec2(target_screen.x, target_screen.y),
@@ -1337,8 +1337,6 @@ void ImGuiVisualizer::renderScene() {
     );
 
     // 绘制实际位置到目标位置的连线（误差线，黄色虚线）
-    auto actual_screen = worldToScreen(tracking_data_.actual_pose.x, tracking_data_.actual_pose.y);
-
     // 计算虚线绘制
     float dx = target_screen.x - actual_screen.x;
     float dy = target_screen.y - actual_screen.y;
@@ -1358,30 +1356,10 @@ void ImGuiVisualizer::renderScene() {
       }
     }
 
-    // 绘制跟踪速度矢量（从实际位置开始的绿色箭头）
-    float target_speed = sqrt(tracking_data_.current_target.twist.vx * tracking_data_.current_target.twist.vx +
-                             tracking_data_.current_target.twist.vy * tracking_data_.current_target.twist.vy);
-    if (target_speed > 0.1) {
-      float speed_arrow_length = target_speed * 30.0f;  // 缩放因子
-      auto speed_arrow_end = worldToScreen(
-        tracking_data_.actual_pose.x + tracking_data_.current_target.twist.vx * 0.5,
-        tracking_data_.actual_pose.y + tracking_data_.current_target.twist.vy * 0.5
-      );
-      draw_list->AddLine(
-        ImVec2(actual_screen.x, actual_screen.y),
-        ImVec2(speed_arrow_end.x, speed_arrow_end.y),
-        IM_COL32(0, 255, 0, 255),  // 绿色
-        2.5f
-      );
-
-      // 绘制箭头头部
-      draw_list->AddCircleFilled(
-        ImVec2(speed_arrow_end.x, speed_arrow_end.y),
-        4.0f,
-        IM_COL32(0, 255, 0, 255)
-      );
-    }
   }  // 🎯 结束轨迹跟踪绘制
+  else {
+    tracking_has_prev_yaw_ = false;
+  }
 
   // 🎨 6. 绘制目标点（可选）
   if (viz_options_.show_goal) {
@@ -1630,6 +1608,66 @@ void ImGuiVisualizer::renderScene() {
         ImDrawFlags_Closed,
         2.0f
       );
+    }
+
+    if (has_world_data_) {
+      // 🚗 绘制车头朝向箭头
+      const double arrow_length_m = 0.9;
+      double arrow_end_x = ego_.pose.x + arrow_length_m * cos_yaw;
+      double arrow_end_y = ego_.pose.y + arrow_length_m * sin_yaw;
+
+      auto arrow_start = worldToScreen(ego_.pose.x, ego_.pose.y);
+      auto arrow_end = worldToScreen(arrow_end_x, arrow_end_y);
+
+      draw_list->AddLine(
+        ImVec2(arrow_start.x, arrow_start.y),
+        ImVec2(arrow_end.x, arrow_end.y),
+        IM_COL32(255, 170, 0, 255),
+        3.5f
+      );
+      draw_list->AddCircleFilled(ImVec2(arrow_end.x, arrow_end.y), 6.0f, IM_COL32(255, 170, 0, 255));
+
+      // 🏎️ 绘制速度矢量（按速度大小缩放，区分正反向）
+      const double speed_body = std::hypot(ego_.twist.vx, ego_.twist.vy);
+      if (speed_body > 1e-3) {
+        constexpr double velocity_scale = 0.6;  // 将 m/s 转成场景中的长度
+        double vel_world_x = ego_.twist.vx * cos_yaw - ego_.twist.vy * sin_yaw;
+        double vel_world_y = ego_.twist.vx * sin_yaw + ego_.twist.vy * cos_yaw;
+        double vel_end_x = ego_.pose.x + vel_world_x * velocity_scale;
+        double vel_end_y = ego_.pose.y + vel_world_y * velocity_scale;
+
+        auto vel_start = worldToScreen(ego_.pose.x, ego_.pose.y);
+        auto vel_end = worldToScreen(vel_end_x, vel_end_y);
+        const bool moving_forward = ego_.twist.vx >= 0.0;
+        ImU32 velocity_color = moving_forward
+          ? IM_COL32(80, 200, 255, 255)   // 蓝色：前进
+          : IM_COL32(255, 120, 120, 255); // 红色：倒退
+
+        draw_list->AddLine(
+          ImVec2(vel_start.x, vel_start.y),
+          ImVec2(vel_end.x, vel_end.y),
+          velocity_color,
+          3.0f
+        );
+        ImVec2 dir_screen = ImVec2(vel_end.x - vel_start.x, vel_end.y - vel_start.y);
+        float dir_len = std::sqrt(dir_screen.x * dir_screen.x + dir_screen.y * dir_screen.y);
+        if (dir_len > 1e-3f) {
+          ImVec2 dir_norm = ImVec2(dir_screen.x / dir_len, dir_screen.y / dir_len);
+          ImVec2 normal = ImVec2(-dir_norm.y, dir_norm.x);
+          const float head_len = std::min(14.0f, dir_len * 0.35f);
+          const float head_width = head_len * 0.6f;
+          ImVec2 tip = ImVec2(vel_end.x, vel_end.y);
+          ImVec2 left = ImVec2(
+            tip.x - dir_norm.x * head_len + normal.x * head_width,
+            tip.y - dir_norm.y * head_len + normal.y * head_width);
+          ImVec2 right = ImVec2(
+            tip.x - dir_norm.x * head_len - normal.x * head_width,
+            tip.y - dir_norm.y * head_len - normal.y * head_width);
+          draw_list->AddTriangleFilled(tip, left, right, velocity_color);
+        } else {
+          draw_list->AddCircleFilled(ImVec2(vel_end.x, vel_end.y), 5.0f, velocity_color);
+        }
+      }
     }
   }  // 🎨 结束自车绘制
 
@@ -2184,6 +2222,14 @@ ImGuiVisualizer::Point2D ImGuiVisualizer::worldToScreen(const planning::Point2d&
   return worldToScreen(point.x, point.y);
 }
 
+ImGuiVisualizer::Point2D ImGuiVisualizer::screenToWorld(float screen_x, float screen_y) const {
+  ImVec2 canvas_pos = scene_canvas_pos_;
+  ImVec2 canvas_size = scene_canvas_size_;
+  double dx = (screen_x - (canvas_pos.x + canvas_size.x / 2.0f)) / (config_.pixels_per_meter * view_state_.zoom);
+  double dy = ((canvas_pos.y + canvas_size.y / 2.0f) - screen_y) / (config_.pixels_per_meter * view_state_.zoom);
+  return Point2D{static_cast<float>(view_state_.center_x + dx), static_cast<float>(view_state_.center_y + dy)};
+}
+
 std::string ImGuiVisualizer::formatBool(bool value) {
   return value ? "Yes" : "No";
 }
@@ -2192,6 +2238,12 @@ std::string ImGuiVisualizer::formatDouble(double value, int precision) {
   std::ostringstream oss;
   oss << std::fixed << std::setprecision(precision) << value;
   return oss.str();
+}
+
+double ImGuiVisualizer::normalizeAngle(double angle) {
+  while (angle > M_PI) angle -= 2.0 * M_PI;
+  while (angle < -M_PI) angle += 2.0 * M_PI;
+  return angle;
 }
 
 void ImGuiVisualizer::renderLegendPanel() {
@@ -2496,7 +2548,7 @@ void ImGuiVisualizer::renderPlotPanel() {
 
     double cumulative_s = 0.0;
     s_values.push_back(cumulative_s);
-    v_values.push_back(std::hypot(trajectory[0].twist.vx, trajectory[0].twist.vy));
+    v_values.push_back(trajectory[0].twist.vx);
     omega_values.push_back(trajectory[0].twist.omega);
 
     for (size_t i = 1; i < trajectory.size(); ++i) {
@@ -2505,7 +2557,7 @@ void ImGuiVisualizer::renderPlotPanel() {
       cumulative_s += std::hypot(dx, dy);
 
       s_values.push_back(cumulative_s);
-      v_values.push_back(std::hypot(trajectory[i].twist.vx, trajectory[i].twist.vy));
+      v_values.push_back(trajectory[i].twist.vx);
       omega_values.push_back(trajectory[i].twist.omega);
     }
   }

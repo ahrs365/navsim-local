@@ -24,7 +24,7 @@ plugin::PerceptionInput PreprocessingPipeline::process(
   input.task = BasicDataConverter::convertTask(world_tick);
 
   // 3. 提取 BEV 障碍物
-  std::cout << "[PreprocessingPipeline] Extracting BEV obstacles..." << std::endl;
+  // std::cout << "[PreprocessingPipeline] Extracting BEV obstacles..." << std::endl;
   auto bev_obstacles = bev_extractor_.extract(world_tick);
   if (bev_obstacles) {
     input.bev_obstacles = *bev_obstacles;

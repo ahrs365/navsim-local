@@ -23,6 +23,10 @@ namespace sim {
   class LocalSimulator;
   struct WorldState;
 }
+namespace planning {
+  struct Pose2d;
+  struct EgoVehicle;
+}
 }
 
 namespace navsim {
@@ -263,6 +267,9 @@ private:
     double last_yaw = 0.0;
   };
   std::optional<PlaybackPlanSignature> playback_plan_signature_;
+  double goal_hold_distance_ = 500.0;
+  std::vector<plugin::TrajectoryPoint> hold_trajectory_;
+  std::string hold_planner_name_;
 
   // 仿真状态
   std::atomic<bool> simulation_started_{false};
@@ -274,6 +281,10 @@ private:
   void setupPluginSystem();
   void updateStatistics(double total_time, double perception_time, double planning_time, bool success);
   bool isGoalReached(const sim::WorldState& world_state) const;
+  bool isNearGoal(const proto::WorldTick& world_tick) const;
+  std::vector<plugin::TrajectoryPoint> trimTrajectoryForCurrentPose(
+    const std::vector<plugin::TrajectoryPoint>& trajectory,
+    const planning::EgoVehicle& current_ego) const;
 };
 
 } // namespace navsim

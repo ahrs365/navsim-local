@@ -21,6 +21,7 @@
 #include <thread>
 #include <atomic>
 #include <cmath>
+#include <limits>
 
 namespace {
 constexpr double kPi = 3.14159265358979323846;
@@ -239,30 +240,30 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
       preprocessing_end - preprocessing_start).count();
 
   // 🔍 调试日志：检查 perception_input 中的障碍物数据
-  std::cout << "[AlgorithmManager] ========== Perception Input Check ==========" << std::endl;
-  std::cout << "[AlgorithmManager] BEV obstacles in perception_input:" << std::endl;
-  std::cout << "[AlgorithmManager]   Circles: " << perception_input.bev_obstacles.circles.size() << std::endl;
-  std::cout << "[AlgorithmManager]   Rectangles: " << perception_input.bev_obstacles.rectangles.size() << std::endl;
-  std::cout << "[AlgorithmManager]   Polygons: " << perception_input.bev_obstacles.polygons.size() << std::endl;
+  // std::cout << "[AlgorithmManager] ========== Perception Input Check ==========" << std::endl;
+  // std::cout << "[AlgorithmManager] BEV obstacles in perception_input:" << std::endl;
+  // std::cout << "[AlgorithmManager]   Circles: " << perception_input.bev_obstacles.circles.size() << std::endl;
+  // std::cout << "[AlgorithmManager]   Rectangles: " << perception_input.bev_obstacles.rectangles.size() << std::endl;
+  // std::cout << "[AlgorithmManager]   Polygons: " << perception_input.bev_obstacles.polygons.size() << std::endl;
 
   // 🎨 可视化感知输入数据
   if (visualizer_) {
-    std::cout << "[AlgorithmManager] Calling visualizer->drawBEVObstacles()..." << std::endl;
+    // std::cout << "[AlgorithmManager] Calling visualizer->drawBEVObstacles()..." << std::endl;
     visualizer_->drawEgo(perception_input.ego);
     visualizer_->drawGoal(perception_input.task.goal_pose);
     visualizer_->drawBEVObstacles(perception_input.bev_obstacles);
 
-    std::cout << "[AlgorithmManager] Calling visualizer->drawDynamicObstacles() with "
-              << perception_input.dynamic_obstacles.size() << " obstacles..." << std::endl;
+    // std::cout << "[AlgorithmManager] Calling visualizer->drawDynamicObstacles() with "
+    //           << perception_input.dynamic_obstacles.size() << " obstacles..." << std::endl;
     // 🔧 修复问题1：打印所有障碍物的信息
     for (size_t i = 0; i < perception_input.dynamic_obstacles.size(); ++i) {
       const auto& obs = perception_input.dynamic_obstacles[i];
-      std::cout << "[AlgorithmManager]   Dyn obs #" << i << ": shape=" << obs.shape_type
-                << ", pos=(" << obs.current_pose.x << ", " << obs.current_pose.y
-                << "), length=" << obs.length << ", width=" << obs.width << std::endl;
+      // std::cout << "[AlgorithmManager]   Dyn obs #" << i << ": shape=" << obs.shape_type
+      //           << ", pos=(" << obs.current_pose.x << ", " << obs.current_pose.y
+      //           << "), length=" << obs.length << ", width=" << obs.width << std::endl;
     }
     visualizer_->drawDynamicObstacles(perception_input.dynamic_obstacles);
-    std::cout << "[AlgorithmManager] Visualizer calls completed" << std::endl;
+    // std::cout << "[AlgorithmManager] Visualizer calls completed" << std::endl;
   }
 
   // Step 2: 感知插件处理
@@ -308,12 +309,41 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
 
   // Step 3: 规划器插件处理
   auto planning_start = std::chrono::steady_clock::now();
-
   auto remaining_time = deadline - std::chrono::duration_cast<std::chrono::milliseconds>(
       planning_start - total_start);
 
+  const planning::EgoVehicle& current_ego = context.ego;
+  bool near_goal = isNearGoal(world_tick);
+
   plugin::PlanningResult planning_result;
-  bool planning_success = planner_plugin_manager_->plan(context, remaining_time, planning_result);
+  bool planning_success = false;
+  bool use_hold_plan = false;
+
+  if (near_goal && !hold_trajectory_.empty()) {
+    auto trimmed = trimTrajectoryForCurrentPose(hold_trajectory_, current_ego);
+    if (!trimmed.empty()) {
+      planning_result.success = true;
+      planning_result.trajectory = std::move(trimmed);
+      planning_result.planner_name = hold_planner_name_.empty() ? "JpsPlanner" : hold_planner_name_;
+      planning_success = true;
+      use_hold_plan = true;
+      hold_trajectory_ = planning_result.trajectory;
+    } else {
+      hold_trajectory_.clear();
+      hold_planner_name_.clear();
+    }
+  }
+
+  if (!planning_success) {
+    planning_success = planner_plugin_manager_->plan(context, remaining_time, planning_result);
+    if (planning_success && !planning_result.trajectory.empty()) {
+      hold_trajectory_ = planning_result.trajectory;
+      hold_planner_name_ = planning_result.planner_name;
+    } else if (!planning_success) {
+      hold_trajectory_.clear();
+      hold_planner_name_.clear();
+    }
+  }
 
   auto planning_end = std::chrono::steady_clock::now();
   double planning_time = std::chrono::duration<double, std::milli>(
@@ -334,6 +364,10 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
       visualizer_->endFrame();
     }
     return false;
+  }
+
+  if (use_hold_plan) {
+    planning_result.planner_name += " [hold]";
   }
 
   // 🎨 可视化规划结果
@@ -463,6 +497,8 @@ void AlgorithmManager::reset() {
   playback_last_plan_tick_id_.reset();
   goal_reached_ = false;
   playback_plan_signature_.reset();
+  hold_trajectory_.clear();
+  hold_planner_name_.clear();
 
   simulation_started_.store(false);
   // 重置统计信息
@@ -715,6 +751,66 @@ bool AlgorithmManager::isGoalReached(const sim::WorldState& world_state) const {
   double angular_speed = std::fabs(world_state.ego_twist.omega);
   return speed < 0.05 && angular_speed < 0.05;
 }
+
+bool AlgorithmManager::isNearGoal(const proto::WorldTick& world_tick) const {
+  if (!world_tick.has_goal() || !world_tick.has_ego()) {
+    return false;
+  }
+  const auto& ego_pose = world_tick.ego().pose();
+  const auto& goal_pose = world_tick.goal().pose();
+  double dx = ego_pose.x() - goal_pose.x();
+  double dy = ego_pose.y() - goal_pose.y();
+  double distance = std::hypot(dx, dy);
+  return distance <= goal_hold_distance_;
+}
+
+std::vector<plugin::TrajectoryPoint> AlgorithmManager::trimTrajectoryForCurrentPose(
+    const std::vector<plugin::TrajectoryPoint>& trajectory,
+    const planning::EgoVehicle& current_ego) const {
+  if (trajectory.empty()) {
+    return {};
+  }
+
+  const auto& current_pose = current_ego.pose;
+
+  size_t closest_idx = 0;
+  double min_distance = std::numeric_limits<double>::infinity();
+  for (size_t i = 0; i < trajectory.size(); ++i) {
+    double dx = trajectory[i].pose.x - current_pose.x;
+    double dy = trajectory[i].pose.y - current_pose.y;
+    double distance = std::hypot(dx, dy);
+    if (distance < min_distance) {
+      min_distance = distance;
+      closest_idx = i;
+    }
+  }
+
+  const auto& start_point = trajectory[closest_idx];
+  double time_offset = start_point.time_from_start;
+  double path_offset = start_point.path_length;
+
+  std::vector<plugin::TrajectoryPoint> trimmed;
+  trimmed.reserve(trajectory.size() - closest_idx);
+
+  for (size_t i = closest_idx; i < trajectory.size(); ++i) {
+    plugin::TrajectoryPoint point = trajectory[i];
+    point.time_from_start = std::max(0.0, point.time_from_start - time_offset);
+    point.path_length = std::max(0.0, point.path_length - path_offset);
+    trimmed.push_back(point);
+  }
+
+  if (trimmed.empty()) {
+    return trimmed;
+  }
+
+  trimmed.front().pose = current_pose;
+  trimmed.front().time_from_start = 0.0;
+  trimmed.front().path_length = 0.0;
+  trimmed.front().twist = current_ego.twist;
+
+  return trimmed;
+}
+
 
 void AlgorithmManager::setupPluginSystem() {
   // 0. 初始化所有插件

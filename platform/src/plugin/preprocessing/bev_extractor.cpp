@@ -46,7 +46,7 @@ void BEVExtractor::extractStaticObstacles(const proto::WorldTick& world_tick,
   if (world_tick.has_static_map()) {
     cached_static_map_ = world_tick.static_map();
     has_cached_static_map_ = true;
-    std::cout << "[BEVExtractor] Updated static map cache" << std::endl;
+    // std::cout << "[BEVExtractor] Updated static map cache" << std::endl;
   }
 
   // 如果没有缓存的静态地图，则跳过

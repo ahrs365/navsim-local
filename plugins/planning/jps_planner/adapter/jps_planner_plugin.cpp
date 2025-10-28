@@ -1166,7 +1166,7 @@ bool JpsPlannerPlugin::convertMincoOutputToResult(const navsim::planning::Planni
 
     // 🔍 详细打印前 5 个点的完整信息
     std::cout << "\n[JPSPlannerPlugin] First 5 trajectory points (detailed):" << std::endl;
-    size_t num_to_print = std::min(size_t(5), minco_trajectory.size());
+    size_t num_to_print = std::min(size_t(100), minco_trajectory.size());
     for (size_t i = 0; i < num_to_print; ++i) {
       const auto& pt = minco_trajectory[i];
       std::cout << "  Point[" << i << "]: "

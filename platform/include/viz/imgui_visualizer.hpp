@@ -211,6 +211,10 @@ private:
   std::vector<float> history_omega_;     // 历史角速度
   void clearHistoryData();               // 清空历史数据（Reset 时调用）
 
+  // 轨迹跟踪可视化状态
+  bool tracking_has_prev_yaw_ = false;
+  double tracking_prev_yaw_ = 0.0;
+
   // 目标点设置相关状态
   bool goal_setting_mode_ = false;        // 是否处于目标点设置模式
   bool has_new_goal_ = false;             // 是否有新的目标点被设置
@@ -246,6 +250,7 @@ private:
   struct Point2D { float x, y; };
   Point2D worldToScreen(double world_x, double world_y) const;
   Point2D worldToScreen(const planning::Point2d& point) const;
+  Point2D screenToWorld(float screen_x, float screen_y) const;
 
   void initializeStateDefaults();
   
@@ -269,6 +274,7 @@ private:
   // 工具函数
   static std::string formatBool(bool value);
   static std::string formatDouble(double value, int precision = 2);
+  static double normalizeAngle(double angle);
 };
 
 } // namespace viz

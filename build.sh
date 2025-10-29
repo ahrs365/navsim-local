@@ -46,7 +46,6 @@ NavSim Local - 编译和运行脚本
 选项:
   -h, --help              显示此帮助信息
   -c, --clean             清理旧的构建
-  -v, --visualization     启用可视化（ImGui）
   -d, --debug             使用 Debug 构建类型
   -r, --release           使用 Release 构建类型
   --no-build              跳过编译，直接运行
@@ -71,9 +70,6 @@ NavSim Local - 编译和运行脚本
   或
   $0 local map2
 
-  # 启用可视化，使用 map2
-  $0 -v -m map2 local
-
   # 编译并运行 WebSocket 在线模式
   $0 websocket
 
@@ -91,7 +87,6 @@ EOF
 
 # 默认参数
 CLEAN_BUILD=false
-ENABLE_VIZ=false
 BUILD_TYPE="RelWithDebInfo"
 NO_BUILD=false
 BUILD_ONLY=false
@@ -107,10 +102,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         -c|--clean)
             CLEAN_BUILD=true
-            shift
-            ;;
-        -v|--visualization)
-            ENABLE_VIZ=true
             shift
             ;;
         -d|--debug)
@@ -168,32 +159,30 @@ if [ "$NO_BUILD" = false ]; then
     # 检查依赖
     print_info "检查依赖..."
 
-    # 检查 ImGui（如果启用可视化）
-    if [ "$ENABLE_VIZ" = true ]; then
-        if [ ! -d "third_party/imgui" ]; then
-            print_warning "ImGui not found!"
-            print_info "下载 ImGui..."
-            mkdir -p third_party
-            cd third_party
-            git clone https://github.com/ocornut/imgui.git --depth 1
-            cd ..
-            print_success "ImGui 下载成功"
-        else
-            print_success "ImGui 已存在"
-        fi
-
-        # 检查 SDL2
-        if ! pkg-config --exists sdl2; then
-            print_error "SDL2 未安装!"
-            echo ""
-            echo "请安装 SDL2:"
-            echo "  Ubuntu/Debian: sudo apt-get install libsdl2-dev"
-            echo "  macOS:         brew install sdl2"
-            echo ""
-            exit 1
-        fi
-        print_success "SDL2 已安装: $(pkg-config --modversion sdl2)"
+    # 检查 ImGui（始终启用可视化）
+    if [ ! -d "third_party/imgui" ]; then
+        print_warning "ImGui not found!"
+        print_info "下载 ImGui..."
+        mkdir -p third_party
+        cd third_party
+        git clone https://github.com/ocornut/imgui.git --depth 1
+        cd ..
+        print_success "ImGui 下载成功"
+    else
+        print_success "ImGui 已存在"
     fi
+
+    # 检查 SDL2
+    if ! pkg-config --exists sdl2; then
+        print_error "SDL2 未安装!"
+        echo ""
+        echo "请安装 SDL2:"
+        echo "  Ubuntu/Debian: sudo apt-get install libsdl2-dev"
+        echo "  macOS:         brew install sdl2"
+        echo ""
+        exit 1
+    fi
+    print_success "SDL2 已安装: $(pkg-config --modversion sdl2)"
 
     # 清理旧的构建
     if [ "$CLEAN_BUILD" = true ] && [ -d "build" ]; then
@@ -205,12 +194,12 @@ if [ "$NO_BUILD" = false ]; then
     # 配置 CMake
     print_info "配置 CMake..."
     echo "  - 构建类型: $BUILD_TYPE"
-    echo "  - 可视化: $([ "$ENABLE_VIZ" = true ] && echo "启用" || echo "禁用")"
+    echo "  - 可视化: 启用"
     echo "  - 插件: 启用"
     echo ""
 
     cmake -B build -S . \
-        -DENABLE_VISUALIZATION=$([ "$ENABLE_VIZ" = true ] && echo "ON" || echo "OFF") \
+        -DENABLE_VISUALIZATION=ON \
         -DBUILD_PLUGINS=ON \
         -DCMAKE_BUILD_TYPE=$BUILD_TYPE
 
@@ -263,20 +252,15 @@ if [ -n "$RUN_MODE" ]; then
             echo ""
 
             print_info "控制键:"
-            if [ "$ENABLE_VIZ" = true ]; then
-                echo "  F       - 跟随自车"
-                echo "  +/-     - 缩放"
-                echo "  ESC     - 关闭窗口"
-            fi
+            echo "  F       - 跟随自车"
+            echo "  +/-     - 缩放"
+            echo "  ESC     - 关闭窗口"
             echo "  Ctrl+C  - 停止仿真"
             echo ""
             print_header "开始运行"
 
             # 构建命令参数
             CMD_ARGS="--local-sim --scenario=$SCENARIO_FILE --config=config/default.json"
-            if [ "$ENABLE_VIZ" = true ]; then
-                CMD_ARGS="$CMD_ARGS --visualize"
-            fi
 
             ./build/navsim_algo $CMD_ARGS
             ;;
@@ -309,4 +293,3 @@ if [ -n "$RUN_MODE" ]; then
             ;;
     esac
 fi
-

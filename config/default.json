@@ -138,6 +138,6 @@
   "algorithm": {
     "max_computation_time_ms": 25.0,
     "verbose_logging": false,
-    "enable_visualization": true
+    "goal_hold_distance_": 2.0
   }
 }

@@ -158,8 +158,7 @@ navsim-local/config/default.json
     "fallback_planner": "StraightLinePlanner",
     "enable_planner_fallback": true,
     "max_computation_time_ms": 25.0,
-    "verbose_logging": true,
-    "enable_visualization": false
+    "verbose_logging": true
   },
   "perception": {
     "preprocessing": {
@@ -213,7 +212,8 @@ navsim-local/config/default.json
 | `enable_planner_fallback` | bool | true | 启用降级机制 |
 | `max_computation_time_ms` | double | 25.0 | 最大计算时间（毫秒） |
 | `verbose_logging` | bool | true | 详细日志 |
-| `enable_visualization` | bool | false | ImGui 可视化（可选） |
+
+> 可视化界面固定启用，无需额外配置字段。
 
 #### 感知配置 (`perception.plugins`)
 
@@ -301,11 +301,7 @@ cd navsim-local/build
 cmake .. -DENABLE_VISUALIZATION=ON -DBUILD_PLUGINS=ON
 make -j$(nproc)
 
-# 3. 修改配置文件
-# 编辑 config/default.json，设置：
-# "enable_visualization": true
-
-# 4. 运行
+# 3. 运行（可视化已默认启用，无需额外开关）
 ./navsim_algo ws://127.0.0.1:8080/ws demo --config=../config/default.json
 ```
 
@@ -385,4 +381,3 @@ Error: Failed to connect to ws://127.0.0.1:8080/ws
 ---
 
 **遇到问题？** 提交 [Issue](https://github.com/ahrs365/ahrs-simulator/issues)
-

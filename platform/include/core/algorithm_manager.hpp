@@ -53,8 +53,7 @@ public:
     double max_computation_time_ms = 25.0;  // 最大计算时间
     bool verbose_logging = false;           // 详细日志
 
-    // 可视化配置
-    bool enable_visualization = false;      // 启用实时可视化
+    double goal_hold_distance = 2.0;        // 判定保持终点的距离阈值
 
     // 🔧 栅格地图配置
     double grid_map_width = 100.0;         // 栅格地图宽度 (m)
@@ -267,7 +266,7 @@ private:
     double last_yaw = 0.0;
   };
   std::optional<PlaybackPlanSignature> playback_plan_signature_;
-  double goal_hold_distance_ = 5.0;
+  double goal_hold_distance_ = 2.0;
   std::vector<plugin::TrajectoryPoint> hold_trajectory_;
   std::string hold_planner_name_;
   int hold_last_velocity_sign_ = 0;

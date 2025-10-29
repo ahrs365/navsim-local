@@ -61,8 +61,7 @@ vim config/default.json
   "algorithm": {
     "primary_planner": "AstarPlanner",
     "fallback_planner": "StraightLinePlanner",
-    "max_computation_time_ms": 25.0,
-    "enable_visualization": false
+    "max_computation_time_ms": 25.0
   },
   "perception": {
     "plugins": [
@@ -108,11 +107,12 @@ vim config/default.json
     "fallback_planner": "StraightLinePlanner", // 降级规划器
     "enable_planner_fallback": true,          // 启用降级
     "max_computation_time_ms": 25.0,          // 最大计算时间
-    "verbose_logging": true,                  // 详细日志
-    "enable_visualization": true              // 启用可视化
+    "verbose_logging": true                   // 详细日志
   }
 }
 ```
+
+> 可视化输出默认始终启用，无需额外开关。
 
 ### 感知配置
 

@@ -69,6 +69,8 @@ AlgorithmManager::~AlgorithmManager() = default;
 
 bool AlgorithmManager::initialize() {
   try {
+    goal_hold_distance_ = config_.goal_hold_distance;
+
     std::cout << "[AlgorithmManager] Initializing with plugin system..." << std::endl;
     setupPluginSystem();
 
@@ -86,37 +88,36 @@ bool AlgorithmManager::initialize() {
     std::cout << "[AlgorithmManager] Trajectory tracker initialized" << std::endl;
 
     // 初始化可视化器
-    if (config_.enable_visualization) {
-      std::cout << "[AlgorithmManager] Initializing visualizer..." << std::endl;
-      visualizer_ = viz::createVisualizer(true);
-      if (visualizer_ && visualizer_->initialize()) {
-        std::cout << "[AlgorithmManager] Visualizer initialized successfully" << std::endl;
+    bool visualization_ready = false;
 
-        // 🎮 设置仿真控制回调
-        auto* imgui_viz = dynamic_cast<viz::ImGuiVisualizer*>(visualizer_.get());
-        if (imgui_viz) {
-          imgui_viz->setSimulationControlCallbacks(
-            [this]() { this->startSimulation(); },   // Start callback
-            [this]() { this->pauseSimulation(); },   // Pause callback
-            [this]() { this->resetSimulation(); }    // Reset callback
-          );
-          // 初始状态为暂停
-          imgui_viz->updateSimulationStatus(true);
-          std::cout << "[AlgorithmManager] Simulation control callbacks set" << std::endl;
-        }
-      } else {
-        std::cerr << "[AlgorithmManager] Failed to initialize visualizer" << std::endl;
-        visualizer_.reset();
+    std::cout << "[AlgorithmManager] Initializing visualizer..." << std::endl;
+    visualizer_ = viz::createVisualizer(true);
+    if (visualizer_ && visualizer_->initialize()) {
+      std::cout << "[AlgorithmManager] Visualizer initialized successfully" << std::endl;
+      visualization_ready = true;
+
+      // 🎮 设置仿真控制回调
+      auto* imgui_viz = dynamic_cast<viz::ImGuiVisualizer*>(visualizer_.get());
+      if (imgui_viz) {
+        imgui_viz->setSimulationControlCallbacks(
+          [this]() { this->startSimulation(); },   // Start callback
+          [this]() { this->pauseSimulation(); },   // Pause callback
+          [this]() { this->resetSimulation(); }    // Reset callback
+        );
+        // 初始状态为暂停
+        imgui_viz->updateSimulationStatus(true);
+        std::cout << "[AlgorithmManager] Simulation control callbacks set" << std::endl;
       }
     } else {
-      visualizer_ = viz::createVisualizer(false);  // NullVisualizer
+      std::cerr << "[AlgorithmManager] Failed to initialize visualizer, falling back to null visualizer" << std::endl;
+      visualizer_ = viz::createVisualizer(false);  // NullVisualizer fallback
     }
 
     std::cout << "[AlgorithmManager] Initialized successfully" << std::endl;
     std::cout << "  Primary planner: " << config_.primary_planner << std::endl;
     std::cout << "  Fallback planner: " << config_.fallback_planner << std::endl;
     std::cout << "  Max computation time: " << config_.max_computation_time_ms << " ms" << std::endl;
-    std::cout << "  Visualization: " << (config_.enable_visualization ? "ENABLED" : "DISABLED") << std::endl;
+    std::cout << "  Visualization: " << (visualization_ready ? "ENABLED" : "DISABLED (fallback)") << std::endl;
 
     if (visualizer_) {
       system_info_cache_.general.clear();
@@ -126,7 +127,9 @@ bool AlgorithmManager::initialize() {
       system_info_cache_.general["Config File"] = active_config_file_.empty()
         ? "config/default.json"
         : active_config_file_;
-      system_info_cache_.general["Visualizer"] = "ImGui (SDL2/OpenGL2)";
+      system_info_cache_.general["Visualizer"] = visualization_ready
+        ? "ImGui (SDL2/OpenGL2)"
+        : "NullVisualizer";
       system_info_cache_.general["Primary Planner"] = planner_plugin_manager_
         ? planner_plugin_manager_->getPrimaryPlannerName()
         : config_.primary_planner;
@@ -141,7 +144,7 @@ bool AlgorithmManager::initialize() {
         oss << std::fixed << std::setprecision(1) << config_.max_computation_time_ms;
         system_info_cache_.general["Max Computation Time"] = oss.str() + " ms";
       }
-      system_info_cache_.general["Visualization"] = config_.enable_visualization ? "Enabled" : "Disabled";
+      system_info_cache_.general["Visualization"] = visualization_ready ? "Enabled" : "Disabled";
       if (!connection_label_.empty()) {
         system_info_cache_.general["Connection Target"] = connection_label_;
       }

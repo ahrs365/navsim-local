@@ -47,7 +47,6 @@ cd navsim-local
 |------|------|
 | `-h, --help` | 显示帮助信息 |
 | `-c, --clean` | 清理旧的构建 |
-| `-v, --visualization` | 启用可视化（ImGui） |
 | `-d, --debug` | 使用 Debug 构建类型 |
 | `-r, --release` | 使用 Release 构建类型 |
 | `--no-build` | 跳过编译，直接运行 |
@@ -80,14 +79,13 @@ cd navsim-local
 ./build.sh -d local
 ```
 
-### 启用可视化
+### 可视化依赖
+
+ImGui 窗口现已默认启用，请确保本地已安装可视化依赖：
 
 ```bash
 # 安装 SDL2（首次使用）
 sudo apt-get install libsdl2-dev
-
-# 启用可视化编译并运行
-./build.sh -v local
 ```
 
 **可视化控制键**：
@@ -133,13 +131,7 @@ sudo apt-get install libsdl2-dev
 ```bash
 cd navsim-local
 
-# 基本配置
-cmake -B build -S . \
-  -DENABLE_VISUALIZATION=OFF \
-  -DBUILD_PLUGINS=ON \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo
-
-# 或者启用可视化
+# 基本配置（可视化默认启用）
 cmake -B build -S . \
   -DENABLE_VISUALIZATION=ON \
   -DBUILD_PLUGINS=ON \
@@ -341,4 +333,3 @@ gdb --args ./build/navsim_algo --local-sim \
   --scenario=scenarios/map1.json \
   --config=config/default.json
 ```
-

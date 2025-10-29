@@ -7,7 +7,6 @@
 #include <mutex>
 #include <optional>
 #include <string>
-#include <thread>
 #include <fstream>
 
 #include "core/bridge.hpp"
@@ -27,7 +26,6 @@ struct CommandLineArgs {
   std::string ws_url;
   std::string room_id;
   std::string config_file;
-  bool enable_visualization = false;
 
   bool is_valid() const {
     if (use_local_sim) {
@@ -58,7 +56,7 @@ void signal_handler(int) {
 void print_usage(const char* prog) {
   std::cerr << "Usage: " << std::endl;
   std::cerr << "  WebSocket mode: " << prog << " <ws_url> <room_id> [--config=<path>]" << std::endl;
-  std::cerr << "  Local sim mode: " << prog << " --local-sim --scenario=<scene_file> [--config=<path>] [--visualize]" << std::endl;
+  std::cerr << "  Local sim mode: " << prog << " --local-sim --scenario=<scene_file> [--config=<path>]" << std::endl;
   std::cerr << std::endl;
   std::cerr << "Examples:" << std::endl;
   std::cerr << "  # WebSocket online mode (scene from frontend)" << std::endl;
@@ -68,7 +66,6 @@ void print_usage(const char* prog) {
   std::cerr << "  # Local simulation mode (scene from JSON file)" << std::endl;
   std::cerr << "  " << prog << " --local-sim --scenario=scenarios/map1.json" << std::endl;
   std::cerr << "  " << prog << " --local-sim --scenario=scenarios/map1.json --config=config/default.json" << std::endl;
-  std::cerr << "  " << prog << " --local-sim --scenario=scenarios/map1.json --visualize" << std::endl;
 }
 
 // 从配置文件加载算法配置
@@ -100,8 +97,8 @@ bool load_config_from_file(const std::string& config_path, navsim::AlgorithmMana
       if (algo.contains("verbose_logging")) {
         config.verbose_logging = algo["verbose_logging"].get<bool>();
       }
-      if (algo.contains("enable_visualization")) {
-        config.enable_visualization = algo["enable_visualization"].get<bool>();
+      if (algo.contains("goal_hold_distance_")) {
+        config.goal_hold_distance = algo["goal_hold_distance_"].get<double>();
       }
     }
 
@@ -160,8 +157,6 @@ bool parse_command_line(int argc, char* argv[], CommandLineArgs& args) {
         args.scenario_file = arg.substr(11);
       } else if (arg.find("--config=") == 0) {
         args.config_file = arg.substr(9);
-      } else if (arg == "--visualize") {
-        args.enable_visualization = true;
       } else if (arg == "--local-sim") {
         // Already handled
         continue;
@@ -198,7 +193,7 @@ int run_local_simulation(const CommandLineArgs& args) {
   if (!args.config_file.empty()) {
     std::cout << "Config: " << args.config_file << std::endl;
   }
-  std::cout << "Visualization: " << (args.enable_visualization ? "ENABLED (ImGui)" : "DISABLED") << std::endl;
+  std::cout << "Visualization: ENABLED (ImGui)" << std::endl;
   std::cout << "====================================" << std::endl;
 
   std::signal(SIGINT, navsim::signal_handler);
@@ -226,7 +221,6 @@ int run_local_simulation(const CommandLineArgs& args) {
   navsim::AlgorithmManager::Config algo_config;
   // 使用默认配置（JpsPlanner），不要硬编码
   // algo_config.primary_planner 会使用 AlgorithmManager::Config 的默认值
-  algo_config.enable_visualization = args.enable_visualization;
   algo_config.verbose_logging = true;
 
   // 从配置文件加载（如果提供）
@@ -249,42 +243,14 @@ int run_local_simulation(const CommandLineArgs& args) {
 
   std::cout << "[Main] Starting local simulation..." << std::endl;
 
-  // 5. 运行仿真循环
-  // 根据是否启用可视化选择不同的线程模型
-  if (args.enable_visualization) {
-    // 🎨 可视化模式：主线程运行仿真循环
-    // SDL2 要求窗口的创建、事件处理和渲染必须在同一个线程中
-    std::cout << "[Main] Running simulation loop in main thread (visualization enabled)" << std::endl;
-    std::cout << "[Main] Press Ctrl+C or close the window to stop" << std::endl;
+  // 5. 运行仿真循环（始终使用可视化模式）
+  std::cout << "[Main] Running simulation loop in main thread (visualization enabled)" << std::endl;
+  std::cout << "[Main] Press Ctrl+C or close the window to stop" << std::endl;
 
-    // 传递 g_interrupt 信号，让仿真循环能够响应 Ctrl+C
-    algorithm_manager.run_simulation_loop(&navsim::g_interrupt);
+  // 传递 g_interrupt 信号，让仿真循环能够响应 Ctrl+C
+  algorithm_manager.run_simulation_loop(&navsim::g_interrupt);
 
-    std::cout << "[Main] Local simulation ended" << std::endl;
-  } else {
-    // 无可视化模式：仿真循环在单独的线程中运行
-    std::cout << "[Main] Running simulation loop in separate thread (no visualization)" << std::endl;
-    std::cout << "[Main] Press Ctrl+C to stop" << std::endl;
-
-    std::thread sim_thread([&algorithm_manager]() {
-      algorithm_manager.run_simulation_loop();
-    });
-
-    // 6. 等待中断信号
-    while (!navsim::g_interrupt.load()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
-    std::cout << "[Main] Shutting down..." << std::endl;
-
-    // 停止仿真循环
-    algorithm_manager.stop_simulation_loop();
-
-    // 清理
-    sim_thread.join();
-
-    std::cout << "[Main] Local simulation ended" << std::endl;
-  }
+  std::cout << "[Main] Local simulation ended" << std::endl;
 
   return 0;
 }
@@ -317,7 +283,6 @@ int run_websocket_mode(const CommandLineArgs& args) {
   // 2. 初始化算法管理器
   navsim::AlgorithmManager::Config algo_config;
   algo_config.primary_planner = "StraightLinePlanner";
-  algo_config.enable_visualization = false;  // WebSocket模式不使用本地可视化
   algo_config.verbose_logging = true;
 
   // 从配置文件加载（如果提供）

@@ -373,3 +373,6 @@ cmake --build . -j$(nproc)
 **更多开发细节，可关注公众号了解： 哎嗨人生**
 
 ![NavSim Local Overview](docs/assets/微信公众号.jpg)
+
+
+[![Star History Chart](https://api.star-history.com/svg?repos=ahrs365/navsim-local&type=Date)](https://star-history.com/#ahrs365/navsim-local&Date)

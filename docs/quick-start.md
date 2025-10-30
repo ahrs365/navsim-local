@@ -67,6 +67,9 @@ cd navsim-local
 - 场景文件位于 `scenarios/`，JSON 含起终点、障碍物、底盘约束等。
 - 可复制 `config/default.json`，修改插件/规划器参数后通过 `--config=<your_config>` 加载。
 
+可通过在线场景编辑器进行绘制地图：[网址](https://www.gl-robotics.com/navsim-online/index.html)
+。下载地图为json文件，把文件放入navsim-local/scenarios/目录中即可
+
 ---
 
 就这么简单，祝玩得愉快 🚀！

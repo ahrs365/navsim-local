@@ -27,7 +27,7 @@
       },
       {
         "name": "EsdfBuilder",
-        "enabled": true,
+        "enabled": false,
         "priority": 90,
         "params": {
           "resolution": 0.1,
@@ -40,7 +40,7 @@
     ]
   },
   "planning": {
-    "primary_planner": "JpsPlanner",
+    "primary_planner": "TMPCPlanner",
     "fallback_planner": "StraightLine",
     "enable_fallback": true,
     "planners": {

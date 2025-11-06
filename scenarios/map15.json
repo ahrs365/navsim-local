@@ -1,0 +1,61 @@
+{
+  "name": "地图_2025-11-6",
+  "timestamp": 1762425755015,
+  "startPose": {
+    "x": -0.05424317909495535,
+    "y": 0.050007820884025334,
+    "yaw": 0.0740691543686702
+  },
+  "goalPose": {
+    "x": 8.713507730358744,
+    "y": -0.09040267386920395,
+    "yaw": 0.002554279792249977,
+    "tol": {
+      "pos": 0.2,
+      "yaw": 0.1
+    }
+  },
+  "obstacles": {
+    "circles": [],
+    "polygons": [],
+    "dynamic": [
+      {
+        "kind": "circle",
+        "data": {
+          "type": "circle",
+          "r": 0.5599502649621307
+        },
+        "state": {
+          "x": 3.7013760659631822,
+          "y": 1.0813626280111994,
+          "vx": 3.061616997868383e-17,
+          "vy": -0.1,
+          "yaw": -1.5707963267948966
+        }
+      }
+    ]
+  },
+  "chassisType": "differential",
+  "chassisConfig": {
+    "model": "differential",
+    "wheelbase": 0,
+    "track_width": 0.4,
+    "limits": {
+      "v_max": 2,
+      "a_max": 2,
+      "omega_max": 2,
+      "steer_max": 0
+    },
+    "geometry": {
+      "body_length": 0.5,
+      "body_width": 0.5,
+      "body_height": 0.3,
+      "wheel_radius": 0.08,
+      "wheel_width": 0.05,
+      "front_overhang": 0.3,
+      "rear_overhang": 0.2,
+      "caster_count": 2,
+      "track_width_ratio": 0
+    }
+  }
+}

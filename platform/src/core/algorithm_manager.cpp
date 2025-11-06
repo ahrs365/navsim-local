@@ -450,6 +450,116 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
   if (visualizer_) {
     visualizer_->updatePlanningResult(planning_result);
     visualizer_->drawTrajectory(planning_result.trajectory, planning_result.planner_name);
+
+    // 🎨 可视化调试路径（支持 JPS 和 TMPC）
+    if (planning_result.metadata.count("has_debug_paths") > 0 &&
+        planning_result.metadata.count("debug_paths_ptr") > 0) {
+      // Get debug paths from the pointer stored in metadata
+      auto* debug_paths_ptr = reinterpret_cast<std::vector<std::vector<planning::Pose2d>>*>(
+          static_cast<uintptr_t>(planning_result.metadata.at("debug_paths_ptr")));
+
+      if (debug_paths_ptr && !debug_paths_ptr->empty()) {
+        if (config_.verbose_logging) {
+          std::cout << "[AlgorithmManager] Drawing " << debug_paths_ptr->size() << " debug paths for "
+                    << planning_result.planner_name << " visualization" << std::endl;
+        }
+
+        std::vector<std::string> path_names;
+        std::vector<std::string> colors;
+
+        if (planning_result.planner_name == "JpsPlanner") {
+          // JPS paths - simple naming
+          for (size_t i = 0; i < debug_paths_ptr->size(); ++i) {
+            path_names.push_back("JPS Path " + std::to_string(i));
+            colors.push_back("yellow");
+          }
+        } else if (planning_result.planner_name == "MincoPlanner") {
+          // MINCO paths - 2 stages
+          path_names = {
+            "MINCO Stage1",  // 第一阶段路径
+            "MINCO Stage2"   // 第二阶段路径
+          };
+          colors = {
+            "magenta",  // MINCO Stage1 - 洋红色（高对比度）
+            "cyan"      // MINCO Stage2 - 青色（高对比度）
+          };
+        } else if (planning_result.planner_name == "TMPCPlanner") {
+          // TMPC paths - use path type information from metadata
+          std::vector<std::string>* path_types_ptr = nullptr;
+          if (planning_result.metadata.count("debug_path_types_ptr") > 0) {
+            path_types_ptr = reinterpret_cast<std::vector<std::string>*>(
+                static_cast<uintptr_t>(planning_result.metadata.at("debug_path_types_ptr")));
+          }
+
+          if (path_types_ptr && path_types_ptr->size() == debug_paths_ptr->size()) {
+            // Use path type information
+            int guidance_idx = 0;
+            int mpc_idx = 0;
+            int obs_idx = 0;
+
+            for (const auto& type : *path_types_ptr) {
+              if (type == "guidance") {
+                path_names.push_back("TMPC Guidance " + std::to_string(guidance_idx++));
+                colors.push_back("dashed_cyan");
+              } else if (type == "mpc_candidate") {
+                path_names.push_back("TMPC MPC Candidate " + std::to_string(mpc_idx++));
+                colors.push_back("orange");
+              } else if (type == "reference") {
+                path_names.push_back("TMPC Reference Path");
+                colors.push_back("yellow");
+              } else if (type == "obstacle_prediction") {
+                path_names.push_back("TMPC Obstacle " + std::to_string(obs_idx++));
+                colors.push_back("red");
+              } else if (type == "past_trajectory") {
+                path_names.push_back("TMPC Past Trajectory");
+                colors.push_back("gray");
+              } else {
+                path_names.push_back("TMPC Unknown");
+                colors.push_back("white");
+              }
+            }
+          } else {
+            // Fallback: use simple naming
+            for (size_t i = 0; i < debug_paths_ptr->size(); ++i) {
+              path_names.push_back("TMPC Path " + std::to_string(i));
+              colors.push_back("white");
+            }
+          }
+        }
+
+        visualizer_->drawDebugPaths(*debug_paths_ptr, path_names, colors);
+      }
+    }
+
+    // 🎨 可视化近似圆（TMPC 规划器）
+    if (planning_result.planner_name == "TMPCPlanner" &&
+        planning_result.metadata.count("approximation_circles_ptr") > 0 &&
+        planning_result.metadata.count("approximation_circles_count") > 0) {
+
+      // 定义与插件中相同的结构
+      struct ApproximationCircle {
+        double x, y, radius;
+      };
+
+      auto* circles_ptr = reinterpret_cast<std::vector<ApproximationCircle>*>(
+          static_cast<uintptr_t>(planning_result.metadata.at("approximation_circles_ptr")));
+
+      if (circles_ptr && !circles_ptr->empty()) {
+        std::vector<std::tuple<double, double, double>> circles;
+        for (const auto& c : *circles_ptr) {
+          circles.emplace_back(c.x, c.y, c.radius);
+        }
+
+        // Use dynamic_cast to call ImGuiVisualizer-specific method
+        auto* imgui_viz = dynamic_cast<viz::ImGuiVisualizer*>(visualizer_.get());
+        if (imgui_viz) {
+          imgui_viz->drawApproximationCircles(circles);
+          if (config_.verbose_logging) {
+            std::cout << "[AlgorithmManager] Drawing " << circles.size() << " approximation circles" << std::endl;
+          }
+        }
+      }
+    }
   }
 
   // Step 4: 转换为 proto 格式

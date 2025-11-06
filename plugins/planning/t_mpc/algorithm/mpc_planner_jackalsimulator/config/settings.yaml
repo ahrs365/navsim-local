@@ -86,7 +86,7 @@ weights: # Weights of the MPC, need to correspond to declared weights in the sol
   velocity: 0.55
   acceleration: 0.34
   angular_velocity: 0.85
-  reference_velocity: 2.0 #1.5
+  reference_velocity: 2.0 # Reference velocity for MPC (m/s)
   contour: 0.05
   preview: 0.0
   lag: 0.75

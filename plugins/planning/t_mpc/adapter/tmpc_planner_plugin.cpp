@@ -61,6 +61,16 @@ bool TMPCPlannerPlugin::initialize(const json& config) {
 
   // Initialize T-MPC configuration
   std::string config_file = config_dir_ + "/settings.yaml";
+
+  // Check if file exists before loading
+  std::ifstream test_file(config_file);
+  if (!test_file.good()) {
+    std::cerr << "[TMPCPlannerPlugin] Config file does not exist or cannot be opened: "
+              << config_file << std::endl;
+    return false;
+  }
+  test_file.close();
+
   try {
     Configuration::getInstance().initialize(config_file);
   } catch (const std::exception& e) {
@@ -68,6 +78,12 @@ bool TMPCPlannerPlugin::initialize(const json& config) {
               << e.what() << std::endl;
     return false;
   }
+
+  // Read parameters from T-MPC settings.yaml (override default.json values if present)
+  horizon_steps_ = CONFIG["N"].as<int>();
+  integrator_step_ = CONFIG["integrator_step"].as<double>();
+  max_obstacles_ = CONFIG["max_obstacles"].as<int>();
+  n_discs_ = CONFIG["n_discs"].as<int>();
 
   // Create planner
   planner_ = std::make_unique<MPCPlanner::Planner>();

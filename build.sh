@@ -259,10 +259,11 @@ if [ -n "$RUN_MODE" ]; then
             echo ""
             print_header "开始运行"
 
-            # 构建命令参数
-            CMD_ARGS="--local-sim --scenario=$SCENARIO_FILE --config=config/default.json"
+            # 构建命令参数（路径相对于 build 目录）
+            CMD_ARGS="--local-sim --scenario=../$SCENARIO_FILE --config=../config/default.json"
 
-            ./build/navsim_algo $CMD_ARGS
+            # 从 build 目录运行，确保工作目录正确
+            cd build && ./navsim_algo $CMD_ARGS
             ;;
             
         websocket)
@@ -287,9 +288,10 @@ if [ -n "$RUN_MODE" ]; then
             echo "  4. 观察本地日志和前端可视化"
             echo ""
             print_header "开始运行"
-            
-            ./build/navsim_algo ws://127.0.0.1:8080/ws demo \
-                --config=config/default.json
+
+            # 从 build 目录运行，确保工作目录正确
+            cd build && ./navsim_algo ws://127.0.0.1:8080/ws demo \
+                --config=../config/default.json
             ;;
     esac
 fi

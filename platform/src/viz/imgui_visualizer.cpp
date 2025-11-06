@@ -54,11 +54,9 @@ bool ImGuiVisualizer::initialize() {
 
   // 列出所有可用的渲染器
   int num_drivers = SDL_GetNumRenderDrivers();
-  // std::cout << "[ImGuiVisualizer] Available render drivers (" << num_drivers << "):" << std::endl;
   for (int i = 0; i < num_drivers; ++i) {
     SDL_RendererInfo info;
     SDL_GetRenderDriverInfo(i, &info);
-    // std::cout << "  [" << i << "] " << info.name << std::endl;
   }
 
   // 创建 SDL_Renderer（优先使用软件渲染器）
@@ -115,11 +113,6 @@ bool ImGuiVisualizer::initialize() {
   SDL_RendererInfo renderer_info;
   SDL_GetRendererInfo(sdl_renderer_, &renderer_info);
 
-  // std::cout << "[ImGuiVisualizer] ========== Initialized successfully ==========" << std::endl;
-  // std::cout << "[ImGuiVisualizer] Window size: " << config_.window_width << "x" << config_.window_height << std::endl;
-  // std::cout << "[ImGuiVisualizer] Renderer: " << renderer_info.name << std::endl;
-  // std::cout << "[ImGuiVisualizer] Using SDL_Renderer (no OpenGL dependency)" << std::endl;
-
   return true;
 }
 
@@ -167,15 +160,6 @@ void ImGuiVisualizer::beginFrame() {
   ImGui_ImplSDL2_NewFrame();          // 2. 再 SDL2 后端
   ImGui::NewFrame();                   // 3. 最后 ImGui 核心
 
-  // 调试输出
-  // static int frame_count = 0;
-  // if (frame_count++ % 60 == 0) {  // 每 60 帧输出一次
-  //   std::cout << "[Viz] Frame " << frame_count
-  //             << ", Ego: (" << ego_.pose.x << ", " << ego_.pose.y << ")"
-  //             << ", Trajectory: " << trajectory_.size() << " points"
-  //             << ", BEV circles: " << bev_obstacles_.circles.size()
-  //             << std::endl;
-  // }
 }
 
 void ImGuiVisualizer::handleEvents() {
@@ -293,8 +277,6 @@ void ImGuiVisualizer::clearAllVisualizationData() {
   // 清空上下文信息
   context_info_.clear();
   context_info_["Status"] = "Waiting for PlanningContext";
-
-  std::cout << "[ImGuiVisualizer] All visualization data cleared" << std::endl;
 }
 
 void ImGuiVisualizer::drawGoal(const planning::Pose2d& goal) {
@@ -547,12 +529,6 @@ void ImGuiVisualizer::renderScene() {
   static int render_count = 0;
   static auto first_render_time = std::chrono::steady_clock::now();
   render_count++;
-
-  if (render_count % 60 == 0) {
-    std::cout << "[Viz] renderScene called #" << render_count
-              << ", has_world_data=" << has_world_data_
-              << ", has_planning_result=" << has_planning_result_ << std::endl;
-  }
 
   // 创建主场景窗口 - 左侧区域
   // 位置：(0, 0)，尺寸：(1190, 850) - 与右侧 Debug Info 面板高度一致，留出 10px 间距
@@ -1281,11 +1257,6 @@ void ImGuiVisualizer::renderScene() {
 
   // 🎨 4.5 绘制调试路径（多阶段显示）
   if (!debug_paths_.empty() && viz_options_.show_debug_paths) {
-    static int debug_log_count = 0;
-    if (debug_log_count++ % 60 == 0) {
-      std::cout << "[Viz]   Drawing " << debug_paths_.size() << " debug paths" << std::endl;
-    }
-
     // 使用 debug_path_colors_ 如果可用，否则使用默认颜色
     std::vector<ImU32> path_colors;
     std::vector<bool> path_dashed;  // Track which paths should be dashed
@@ -1928,8 +1899,6 @@ void ImGuiVisualizer::renderScene() {
 
         // 退出目标点设置模式
         setGoalSettingMode(false);
-
-        std::cout << "[ImGuiVisualizer] New goal set at: (" << world_x << ", " << world_y << ")" << std::endl;
       }
     }
   }
@@ -2013,7 +1982,6 @@ void ImGuiVisualizer::renderDebugPanel() {
   }
   if (start_clicked) {
     addButtonLog("Start CLICKED (returned true)");
-    std::cout << "[ImGuiVisualizer] Start button clicked!" << std::endl;
     if (sim_start_callback_) {
       sim_start_callback_();
     }
@@ -2042,7 +2010,6 @@ void ImGuiVisualizer::renderDebugPanel() {
   }
   if (pause_clicked) {
     addButtonLog("Pause CLICKED (returned true)");
-    std::cout << "[ImGuiVisualizer] Pause button clicked!" << std::endl;
     if (sim_pause_callback_) {
       sim_pause_callback_();
     }
@@ -2050,7 +2017,6 @@ void ImGuiVisualizer::renderDebugPanel() {
   // 手动触发回调（如果检测到释放）
   if (pause_released && !pause_clicked) {
     addButtonLog("Pause MANUAL TRIGGER");
-    std::cout << "[ImGuiVisualizer] Pause button manually triggered!" << std::endl;
     if (sim_pause_callback_) {
       sim_pause_callback_();
     }
@@ -2079,7 +2045,6 @@ void ImGuiVisualizer::renderDebugPanel() {
   }
   if (reset_clicked) {
     addButtonLog("Reset CLICKED (returned true)");
-    std::cout << "[ImGuiVisualizer] Reset button clicked!" << std::endl;
     clearAllVisualizationData();  // 清空所有可视化数据
     if (sim_reset_callback_) {
       sim_reset_callback_();
@@ -2088,7 +2053,6 @@ void ImGuiVisualizer::renderDebugPanel() {
   // 手动触发回调（如果检测到释放）
   if (reset_released && !reset_clicked) {
     addButtonLog("Reset MANUAL TRIGGER");
-    std::cout << "[ImGuiVisualizer] Reset button manually triggered!" << std::endl;
     clearAllVisualizationData();  // 清空所有可视化数据
     if (sim_reset_callback_) {
       sim_reset_callback_();
@@ -2135,9 +2099,6 @@ void ImGuiVisualizer::renderDebugPanel() {
 
   // 按回车键或点击 Load 按钮都可以加载
   if ((enter_pressed || load_clicked) && strlen(scenario_path_input_) > 0) {
-    std::cout << "[ImGuiVisualizer] Load button clicked or Enter pressed!" << std::endl;
-    std::cout << "[ImGuiVisualizer] Input: " << scenario_path_input_ << std::endl;
-
     // 构建完整路径
     std::string filename = scenario_path_input_;
     std::string full_path;
@@ -2162,8 +2123,6 @@ void ImGuiVisualizer::renderDebugPanel() {
 
     scenario_path_request_ = full_path;
     has_scenario_load_request_ = true;
-    std::cout << "[ImGuiVisualizer] Scenario load requested: " << scenario_path_request_ << std::endl;
-    std::cout << "[ImGuiVisualizer] has_scenario_load_request_ set to TRUE" << std::endl;
 
     // 添加到按钮日志
     addButtonLog("Load Scenario: " + full_path);
@@ -2701,7 +2660,6 @@ bool ImGuiVisualizer::hasScenarioLoadRequest(std::string& scenario_path) {
   if (has_scenario_load_request_) {
     scenario_path = scenario_path_request_;
     has_scenario_load_request_ = false;  // 重置标志
-    std::cout << "[ImGuiVisualizer] hasScenarioLoadRequest() returning TRUE, path: " << scenario_path << std::endl;
     return true;
   }
   return false;

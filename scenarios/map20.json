@@ -1,0 +1,79 @@
+{
+  "name": "地图_2025-11-6",
+  "timestamp": 1762442702591,
+  "startPose": {
+    "x": -0.5985834036759599,
+    "y": -0.05483319552454935,
+    "yaw": 0.13701795813405124
+  },
+  "goalPose": {
+    "x": 31.117624599473988,
+    "y": -0.3863503938143231,
+    "yaw": 0.05802715816358777,
+    "tol": {
+      "pos": 0.2,
+      "yaw": 0.1
+    }
+  },
+  "obstacles": {
+    "circles": [],
+    "polygons": [],
+    "dynamic": [
+      {
+        "kind": "rect",
+        "data": {
+          "type": "rect",
+          "w": 3.47585845259359,
+          "h": 1.737929226296795,
+          "yaw": 3.1242911630488757
+        },
+        "state": {
+          "x": 10.752442618319245,
+          "y": -0.1426048461215368,
+          "vx": -0.4999251664730257,
+          "vy": 0.008650313688966078,
+          "yaw": 3.1242911630488757
+        }
+      },
+      {
+        "kind": "rect",
+        "data": {
+          "type": "rect",
+          "w": 3.0413734583541125,
+          "h": 1.5206867291770563,
+          "yaw": -1.5880980787879682
+        },
+        "state": {
+          "x": 25.419852887872107,
+          "y": 3.079978390215121,
+          "vx": -0.008650444395477378,
+          "vy": -0.4999251642113655,
+          "yaw": -1.5880980787879682
+        }
+      }
+    ]
+  },
+  "chassisType": "differential",
+  "chassisConfig": {
+    "model": "differential",
+    "wheelbase": 0,
+    "track_width": 0.4,
+    "limits": {
+      "v_max": 2,
+      "a_max": 2,
+      "omega_max": 2,
+      "steer_max": 0
+    },
+    "geometry": {
+      "body_length": 0.5,
+      "body_width": 0.5,
+      "body_height": 0.3,
+      "wheel_radius": 0.08,
+      "wheel_width": 0.05,
+      "front_overhang": 0.3,
+      "rear_overhang": 0.2,
+      "caster_count": 2,
+      "track_width_ratio": 0
+    }
+  }
+}

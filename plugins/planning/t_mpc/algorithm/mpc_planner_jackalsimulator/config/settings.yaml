@@ -1,5 +1,5 @@
 name: "jackal"
-N: 50 # [#] Time Horizon
+N: 30 # [#] Time Horizon
 integrator_step: 0.2 # [s] Integration step
 n_discs: 1 # Number of discs to model the robot with
 

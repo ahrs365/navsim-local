@@ -510,7 +510,17 @@ planning::PlanningContext LocalSimulator::to_planning_context() const {
     dyn_obs.current_twist = obs.twist;
     dyn_obs.type = "vehicle";  // 默认类型
     dyn_obs.shape_type = (obs.shape == DynamicObstacle::Shape::CIRCLE) ? "circle" : "rectangle";
-    // TODO: 完善形状和预测信息
+
+    // 🔧 设置形状尺寸
+    if (obs.shape == DynamicObstacle::Shape::CIRCLE) {
+      dyn_obs.length = obs.radius * 2.0;  // 直径
+      dyn_obs.width = obs.radius * 2.0;   // 直径
+    } else {
+      dyn_obs.length = obs.height;  // 注意：DynamicObstacle 使用 height 表示长度
+      dyn_obs.width = obs.width;
+    }
+
+    // TODO: 完善预测信息
     context.dynamic_obstacles.push_back(dyn_obs);
   }
 
@@ -666,8 +676,10 @@ proto::WorldTick LocalSimulator::to_world_tick() const {
       circle->set_r(obs.radius);
     } else if (obs.shape == DynamicObstacle::Shape::RECTANGLE) {
       auto* rect = shape->mutable_rectangle();
-      rect->set_w(obs.width);
-      rect->set_h(obs.height);
+      // 🔧 重要：protobuf 的 w/h 与内部表示的 width/height 映射关系对调
+      // 参考 DynamicObstaclePredictor::predictConstantVelocity() 中的注释
+      rect->set_w(obs.height);  // protobuf.w ← sim.height (车辆长度)
+      rect->set_h(obs.width);   // protobuf.h ← sim.width (车辆宽度)
       rect->set_yaw(0.0);  // 矩形相对于障碍物位姿的朝向偏移
     }
 
@@ -808,9 +820,18 @@ std::vector<DynamicObstacle> LocalSimulator::Impl::convert_dynamic_obstacles(
     dyn_obs.pose = obs.current_pose;
     dyn_obs.twist = obs.current_twist;
 
-    // 设置默认参数
-    dyn_obs.shape = DynamicObstacle::Shape::CIRCLE;
-    dyn_obs.radius = 0.5;  // 默认半径
+    // 🔧 根据 shape_type 设置形状参数
+    if (obs.shape_type == "circle") {
+      dyn_obs.shape = DynamicObstacle::Shape::CIRCLE;
+      // 使用 length 作为直径，计算半径
+      dyn_obs.radius = obs.length / 2.0;
+    } else {
+      // 默认为矩形
+      dyn_obs.shape = DynamicObstacle::Shape::RECTANGLE;
+      dyn_obs.width = obs.width;
+      dyn_obs.height = obs.length;  // 注意：DynamicObstacle 使用 height 表示长度
+    }
+
     dyn_obs.model = "cv";  // 恒速模型
 
     result.push_back(dyn_obs);

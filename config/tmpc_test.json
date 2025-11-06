@@ -1,0 +1,58 @@
+{
+  "perception": {
+    "preprocessing": {
+      "bev_extraction": {
+        "enabled": true,
+        "static_obstacle_inflation": 0.2,
+        "dynamic_obstacle_inflation": 0.3
+      },
+      "dynamic_prediction": {
+        "enabled": true,
+        "prediction_horizon": 5.0,
+        "time_step": 0.1
+      }
+    },
+    "plugins": [
+      {
+        "name": "EsdfBuilder",
+        "enabled": true,
+        "priority": 90,
+        "params": {
+          "resolution": 0.1,
+          "map_width": 19.0,
+          "map_height": 19.0,
+          "max_distance": 5.0,
+          "include_dynamic": true
+        }
+      }
+    ]
+  },
+  "planning": {
+    "primary_planner": "TMPCPlanner",
+    "fallback_planner": "StraightLine",
+    "enable_fallback": true,
+    "planners": {
+      "StraightLine": {
+        "default_velocity": 1.5,
+        "time_step": 0.1,
+        "planning_horizon": 5.0,
+        "use_trapezoidal_profile": true,
+        "max_acceleration": 1.0
+      },
+      "TMPCPlanner": {
+        "verbose": true,
+        "config_dir": "navsim-local/plugins/planning/t_mpc/algorithm/mpc_planner_jackalsimulator/config",
+        "horizon_steps": 30,
+        "integrator_step": 0.2,
+        "max_obstacles": 12,
+        "n_discs": 1
+      }
+    }
+  },
+  "algorithm": {
+    "max_computation_time_ms": 50.0,
+    "verbose_logging": true,
+    "goal_hold_distance_": 2.0
+  }
+}
+

@@ -132,6 +132,14 @@
           "hrz_limited": false,
           "hrz_laser_range_dgr": 180.0
         }
+      },
+      "TMPCPlanner": {
+        "verbose": true,
+        "config_dir": "../plugins/planning/t_mpc/algorithm/mpc_planner_jackalsimulator/config",
+        "horizon_steps": 30,
+        "integrator_step": 0.2,
+        "max_obstacles": 30,
+        "n_discs": 1
       }
     }
   },

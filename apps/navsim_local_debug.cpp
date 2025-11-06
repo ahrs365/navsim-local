@@ -38,6 +38,7 @@
 #include "plugin/data/planning_result.hpp"
 #include "plugin/data/perception_input.hpp"
 #include "viz/visualizer_interface.hpp"
+#include "viz/imgui_visualizer.hpp"
 
 #include <iostream>
 #include <string>
@@ -479,34 +480,114 @@ int main(int argc, char** argv) {
       // 可视化轨迹
       g_visualizer->drawTrajectory(result.trajectory, result.planner_name);
 
-      // 可视化调试路径（JPS的多个阶段）
-      if (result.planner_name == "JPSPlanner" && result.metadata.count("has_debug_paths") > 0 &&
+      // 可视化调试路径（支持 JPS 和 TMPC）
+      if (result.metadata.count("has_debug_paths") > 0 &&
           result.metadata.count("debug_paths_ptr") > 0) {
         // Get debug paths from the pointer stored in metadata
         auto* debug_paths_ptr = reinterpret_cast<std::vector<std::vector<planning::Pose2d>>*>(
             static_cast<uintptr_t>(result.metadata.at("debug_paths_ptr")));
 
         if (debug_paths_ptr && !debug_paths_ptr->empty()) {
-          std::cout << "[Debug] Drawing " << debug_paths_ptr->size() << " debug paths for JPS visualization" << std::endl;
-          std::vector<std::string> path_names{
-            "Raw JPS Path",
-            "Optimized Path",
-            "Sample Trajectory",
-            "MINCO Final",
-            "MINCO Stage1 (Preprocessing)",
-            "MINCO Stage2 (Main Opt)"
-          };
-          std::vector<std::string> colors{
-            "red",      // Raw JPS Path - 红色
-            "green",    // Optimized Path - 绿色
-            "blue",     // Sample Trajectory - 蓝色
-            "yellow",   // MINCO Final - 黄色（高对比度）
-            "magenta",  // MINCO Stage1 - 洋红色（高对比度）
-            "cyan"      // MINCO Stage2 - 青色（高对比度）
-          };
+          std::cout << "[Debug] Drawing " << debug_paths_ptr->size() << " debug paths for "
+                    << result.planner_name << " visualization" << std::endl;
+
+          std::vector<std::string> path_names;
+          std::vector<std::string> colors;
+
+          if (result.planner_name == "JPSPlanner") {
+            path_names = {
+              "Raw JPS Path",
+              "Optimized Path",
+              "Sample Trajectory",
+              "MINCO Final",
+              "MINCO Stage1 (Preprocessing)",
+              "MINCO Stage2 (Main Opt)"
+            };
+            colors = {
+              "red",      // Raw JPS Path - 红色
+              "green",    // Optimized Path - 绿色
+              "blue",     // Sample Trajectory - 蓝色
+              "yellow",   // MINCO Final - 黄色（高对比度）
+              "magenta",  // MINCO Stage1 - 洋红色（高对比度）
+              "cyan"      // MINCO Stage2 - 青色（高对比度）
+            };
+          } else if (result.planner_name == "TMPCPlanner") {
+            // TMPC paths - use path type information from metadata
+            std::vector<std::string>* path_types_ptr = nullptr;
+            if (result.metadata.count("debug_path_types_ptr") > 0) {
+              path_types_ptr = reinterpret_cast<std::vector<std::string>*>(
+                  static_cast<uintptr_t>(result.metadata.at("debug_path_types_ptr")));
+            }
+
+            if (path_types_ptr && path_types_ptr->size() == debug_paths_ptr->size()) {
+              // Use path type information
+              int guidance_idx = 0;
+              int mpc_idx = 0;
+              int obs_idx = 0;
+
+              for (size_t i = 0; i < path_types_ptr->size(); ++i) {
+                const std::string& type = (*path_types_ptr)[i];
+
+                if (type == "reference") {
+                  path_names.push_back("Reference Path");
+                  colors.push_back("blue");
+                } else if (type == "guidance") {
+                  path_names.push_back("Guidance Path " + std::to_string(guidance_idx++));
+                  colors.push_back("dashed_cyan");
+                } else if (type == "mpc_candidate") {
+                  path_names.push_back("MPC Candidate " + std::to_string(mpc_idx++));
+                  colors.push_back("orange");
+                } else if (type == "obstacle_prediction") {
+                  path_names.push_back("Obstacle " + std::to_string(obs_idx++) + " Prediction");
+                  colors.push_back("red");
+                } else if (type == "past_trajectory") {
+                  path_names.push_back("Past Trajectory");
+                  colors.push_back("green");
+                } else {
+                  path_names.push_back("Unknown Path");
+                  colors.push_back("white");
+                }
+              }
+            } else {
+              // Fallback: use simple naming
+              for (size_t i = 0; i < debug_paths_ptr->size(); ++i) {
+                path_names.push_back("TMPC Path " + std::to_string(i));
+                colors.push_back("white");
+              }
+            }
+          }
+
           g_visualizer->drawDebugPaths(*debug_paths_ptr, path_names, colors);
         } else {
-          std::cout << "[Debug] No debug paths available for JPS visualization" << std::endl;
+          std::cout << "[Debug] No debug paths available for " << result.planner_name << " visualization" << std::endl;
+        }
+      }
+
+      // 可视化近似圆（TMPC 规划器）
+      if (result.planner_name == "TMPCPlanner" &&
+          result.metadata.count("approximation_circles_ptr") > 0 &&
+          result.metadata.count("approximation_circles_count") > 0) {
+
+        // 定义与插件中相同的结构
+        struct ApproximationCircle {
+          double x, y, radius;
+        };
+
+        auto* circles_ptr = reinterpret_cast<std::vector<ApproximationCircle>*>(
+            static_cast<uintptr_t>(result.metadata.at("approximation_circles_ptr")));
+
+        if (circles_ptr && !circles_ptr->empty()) {
+          std::vector<std::tuple<double, double, double>> circles;
+          for (const auto& c : *circles_ptr) {
+            circles.emplace_back(c.x, c.y, c.radius);
+          }
+
+          // Use dynamic_cast to call ImGuiVisualizer-specific method
+          auto* imgui_viz = dynamic_cast<viz::ImGuiVisualizer*>(g_visualizer.get());
+          if (imgui_viz) {
+            imgui_viz->drawApproximationCircles(circles);
+            std::cout << "[Debug] Drawing " << circles.size() << " approximation circles" << std::endl;
+          }
         }
       }
 
@@ -595,31 +676,81 @@ int main(int argc, char** argv) {
           // 重新绘制轨迹（包括调试路径）
           g_visualizer->drawTrajectory(result.trajectory, result.planner_name);
 
-          // 可视化调试路径（JPS的多个阶段）
-          if (result.planner_name == "JPSPlanner" && result.metadata.count("has_debug_paths") > 0 &&
+          // 可视化调试路径（支持 JPS 和 TMPC）
+          if (result.metadata.count("has_debug_paths") > 0 &&
               result.metadata.count("debug_paths_ptr") > 0) {
             // Get debug paths from the pointer stored in metadata
             auto* debug_paths_ptr = reinterpret_cast<std::vector<std::vector<planning::Pose2d>>*>(
                 static_cast<uintptr_t>(result.metadata.at("debug_paths_ptr")));
 
             if (debug_paths_ptr && !debug_paths_ptr->empty()) {
-              std::cout << "[Replanning] Drawing " << debug_paths_ptr->size() << " debug paths for JPS visualization" << std::endl;
-              std::vector<std::string> path_names{
-                "Raw JPS Path",
-                "Optimized Path",
-                "Sample Trajectory",
-                "MINCO Final",
-                "MINCO Stage1 (Preprocessing)",
-                "MINCO Stage2 (Main Opt)"
-              };
-              std::vector<std::string> colors{
-                "red",      // Raw JPS Path - 红色
-                "green",    // Optimized Path - 绿色
-                "blue",     // Sample Trajectory - 蓝色
-                "yellow",   // MINCO Final - 黄色（高对比度）
-                "magenta",  // MINCO Stage1 - 洋红色（高对比度）
-                "cyan"      // MINCO Stage2 - 青色（高对比度）
-              };
+              std::cout << "[Replanning] Drawing " << debug_paths_ptr->size() << " debug paths for "
+                        << result.planner_name << " visualization" << std::endl;
+
+              std::vector<std::string> path_names;
+              std::vector<std::string> colors;
+
+              if (result.planner_name == "JPSPlanner") {
+                path_names = {
+                  "Raw JPS Path",
+                  "Optimized Path",
+                  "Sample Trajectory",
+                  "MINCO Final",
+                  "MINCO Stage1 (Preprocessing)",
+                  "MINCO Stage2 (Main Opt)"
+                };
+                colors = {
+                  "red",      // Raw JPS Path - 红色
+                  "green",    // Optimized Path - 绿色
+                  "blue",     // Sample Trajectory - 蓝色
+                  "yellow",   // MINCO Final - 黄色（高对比度）
+                  "magenta",  // MINCO Stage1 - 洋红色（高对比度）
+                  "cyan"      // MINCO Stage2 - 青色（高对比度）
+                };
+              } else if (result.planner_name == "TMPCPlanner") {
+                // TMPC paths - use path type information from metadata (same as above)
+                std::vector<std::string>* path_types_ptr = nullptr;
+                if (result.metadata.count("debug_path_types_ptr") > 0) {
+                  path_types_ptr = reinterpret_cast<std::vector<std::string>*>(
+                      static_cast<uintptr_t>(result.metadata.at("debug_path_types_ptr")));
+                }
+
+                if (path_types_ptr && path_types_ptr->size() == debug_paths_ptr->size()) {
+                  int guidance_idx = 0;
+                  int mpc_idx = 0;
+                  int obs_idx = 0;
+
+                  for (size_t i = 0; i < path_types_ptr->size(); ++i) {
+                    const std::string& type = (*path_types_ptr)[i];
+
+                    if (type == "reference") {
+                      path_names.push_back("Reference Path");
+                      colors.push_back("blue");
+                    } else if (type == "guidance") {
+                      path_names.push_back("Guidance Path " + std::to_string(guidance_idx++));
+                      colors.push_back("dashed_cyan");
+                    } else if (type == "mpc_candidate") {
+                      path_names.push_back("MPC Candidate " + std::to_string(mpc_idx++));
+                      colors.push_back("orange");
+                    } else if (type == "obstacle_prediction") {
+                      path_names.push_back("Obstacle " + std::to_string(obs_idx++) + " Prediction");
+                      colors.push_back("red");
+                    } else if (type == "past_trajectory") {
+                      path_names.push_back("Past Trajectory");
+                      colors.push_back("green");
+                    } else {
+                      path_names.push_back("Unknown Path");
+                      colors.push_back("white");
+                    }
+                  }
+                } else {
+                  for (size_t i = 0; i < debug_paths_ptr->size(); ++i) {
+                    path_names.push_back("TMPC Path " + std::to_string(i));
+                    colors.push_back("white");
+                  }
+                }
+              }
+
               g_visualizer->drawDebugPaths(*debug_paths_ptr, path_names, colors);
             }
           }

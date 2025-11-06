@@ -1,0 +1,55 @@
+__pycache__/
+
+poetry.lock
+
+# Build directories
+build/
+*/build/
+*/build_no_ros/
+
+# Solver
+Solver.license
+*.forces
+
+# Generated files
+mpc_planner_solver/Solver/
+mpc_planner_solver/config/
+
+mpc_planner_modules/modules.cmake
+mpc_planner_modules/include/mpc_planner_modules/modules.h
+mpc_planner_modules/include/mpc_planner_modules/definitions.h
+mpc_planner_solver/include/mpc_planner_solver/mpc_planner_parameters.h
+mpc_planner_solver/src/mpc_planner_parameters.cpp
+
+mpc_planner_solver/solver.cmake
+mpc_planner_solver/mpc_planner_solver-extras.cmake
+mpc_planner_*/cfg/*.cfg
+
+
+*_reconfigure.h
+*/cfg/settings.cfg
+
+# Testing
+*.coverage
+*/coverage.xml
+*.pytest_cache/
+
+# Profiling
+*/profiler.json
+
+*/COLCON_IGNORE
+*/CATKIN_IGNORE
+*/scripts/*.db
+
+mpc_planner_autoware/CMakeLists1.txt
+mpc_planner_autoware/package1.xml
+
+mpc_planner_solver/acados
+
+# Runtime generated files
+mpc_trajectory.json
+mpc_trajectory.png
+mpc_result.json
+mpc_result.png
+mpc_result.py
+test_simple.png

@@ -361,6 +361,10 @@ void ImGuiVisualizer::drawDebugPaths(const std::vector<std::vector<planning::Pos
   // }
 }
 
+void ImGuiVisualizer::drawApproximationCircles(const std::vector<std::tuple<double, double, double>>& circles) {
+  approximation_circles_ = circles;
+}
+
 void ImGuiVisualizer::updatePlanningContext(const planning::PlanningContext& context) {
   context_info_.clear();
   context_info_["Timestamp"] = formatDouble(context.timestamp, 3) + " s";
@@ -1213,22 +1217,88 @@ void ImGuiVisualizer::renderScene() {
   }
   }  // 🎨 结束动态障碍物绘制
 
+  // 🎨 4.4 绘制障碍物近似圆（半透明）
+  if (!approximation_circles_.empty() && viz_options_.show_bev_obstacles) {
+    for (const auto& circle_tuple : approximation_circles_) {
+      double x = std::get<0>(circle_tuple);
+      double y = std::get<1>(circle_tuple);
+      double radius = std::get<2>(circle_tuple);
+
+      auto center = worldToScreen(x, y);
+      float screen_radius = radius * config_.pixels_per_meter * view_state_.zoom;
+
+      // 绘制半透明的圆形边界（黄色）
+      draw_list->AddCircle(
+        ImVec2(center.x, center.y),
+        screen_radius,
+        IM_COL32(255, 255, 0, 100),  // 黄色，半透明
+        64,  // 圆形分段数
+        2.0f  // 线宽
+      );
+
+      // 绘制半透明的填充圆（黄色）
+      draw_list->AddCircleFilled(
+        ImVec2(center.x, center.y),
+        screen_radius,
+        IM_COL32(255, 255, 0, 30)  // 黄色，更透明
+      );
+    }
+  }
+
   // 🎨 4.5 绘制调试路径（多阶段显示）
   if (!debug_paths_.empty() && viz_options_.show_debug_paths) {
-    // static int debug_log_count = 0;
-    // if (debug_log_count++ % 60 == 0) {
-    //   std::cout << "[Viz]   Drawing " << debug_paths_.size() << " debug paths" << std::endl;
-    // }
+    static int debug_log_count = 0;
+    if (debug_log_count++ % 60 == 0) {
+      std::cout << "[Viz]   Drawing " << debug_paths_.size() << " debug paths" << std::endl;
+    }
 
-    // 定义颜色映射和开关状态
-    std::vector<ImU32> path_colors = {
-      IM_COL32(255, 100, 100, 255),  // 红色 - Raw JPS path
-      IM_COL32(100, 255, 100, 255),  // 绿色 - Optimized path
-      IM_COL32(100, 100, 255, 255),  // 蓝色 - Sample trajectory
-      IM_COL32(255, 255, 0, 255),    // 黄色 - MINCO Final (高对比度)
-      IM_COL32(255, 0, 255, 255),    // 洋红色 - MINCO Stage1 (高对比度)
-      IM_COL32(0, 255, 255, 255)     // 青色 - MINCO Stage2 (高对比度)
-    };
+    // 使用 debug_path_colors_ 如果可用，否则使用默认颜色
+    std::vector<ImU32> path_colors;
+    std::vector<bool> path_dashed;  // Track which paths should be dashed
+
+    if (!debug_path_colors_.empty() && debug_path_colors_.size() == debug_paths_.size()) {
+      // Convert color names to ImU32
+      for (const auto& color_name : debug_path_colors_) {
+        bool is_dashed = false;
+        std::string actual_color = color_name;
+
+        // Check for "dashed_" prefix
+        if (color_name.substr(0, 7) == "dashed_") {
+          is_dashed = true;
+          actual_color = color_name.substr(7);  // Remove "dashed_" prefix
+        }
+
+        path_dashed.push_back(is_dashed);
+
+        if (actual_color == "red") {
+          path_colors.push_back(IM_COL32(255, 100, 100, 255));
+        } else if (actual_color == "green") {
+          path_colors.push_back(IM_COL32(100, 255, 100, 255));
+        } else if (actual_color == "blue") {
+          path_colors.push_back(IM_COL32(100, 100, 255, 255));
+        } else if (actual_color == "yellow") {
+          path_colors.push_back(IM_COL32(255, 255, 0, 255));
+        } else if (actual_color == "magenta") {
+          path_colors.push_back(IM_COL32(255, 0, 255, 255));
+        } else if (actual_color == "cyan") {
+          path_colors.push_back(IM_COL32(0, 255, 255, 255));
+        } else if (actual_color == "orange") {
+          path_colors.push_back(IM_COL32(255, 165, 0, 255));
+        } else {
+          path_colors.push_back(IM_COL32(255, 255, 255, 255));  // white
+        }
+      }
+    } else {
+      // Default colors for JPS planner
+      path_colors = {
+        IM_COL32(255, 100, 100, 255),  // 红色 - Raw JPS path
+        IM_COL32(100, 255, 100, 255),  // 绿色 - Optimized path
+        IM_COL32(100, 100, 255, 255),  // 蓝色 - Sample trajectory
+        IM_COL32(255, 255, 0, 255),    // 黄色 - MINCO Final (高对比度)
+        IM_COL32(255, 0, 255, 255),    // 洋红色 - MINCO Stage1 (高对比度)
+        IM_COL32(0, 255, 255, 255)     // 青色 - MINCO Stage2 (高对比度)
+      };
+    }
 
     std::vector<bool> path_enabled = {
       viz_options_.show_raw_jps_path,
@@ -1241,25 +1311,72 @@ void ImGuiVisualizer::renderScene() {
 
     for (size_t path_idx = 0; path_idx < debug_paths_.size(); ++path_idx) {
       // Check if this path should be displayed
-      if (path_idx < path_enabled.size() && !path_enabled[path_idx]) {
+      // For JPS paths (first 6 paths with checkboxes)
+      if (path_idx < path_enabled.size() && path_idx < 6 && !path_enabled[path_idx]) {
         continue;  // Skip this path if its checkbox is unchecked
+      }
+
+      // For TMPC paths, check path name and corresponding option
+      if (path_idx < debug_path_names_.size()) {
+        const std::string& path_name = debug_path_names_[path_idx];
+
+        if (path_name == "Reference Path" && !viz_options_.show_tmpc_reference_path) {
+          continue;
+        } else if (path_name.find("Guidance Path") != std::string::npos && !viz_options_.show_tmpc_guidance_paths) {
+          continue;
+        } else if (path_name.find("MPC Candidate") != std::string::npos && !viz_options_.show_tmpc_mpc_candidates) {
+          continue;
+        } else if (path_name.find("Obstacle") != std::string::npos && path_name.find("Prediction") != std::string::npos && !viz_options_.show_tmpc_obstacle_predictions) {
+          continue;
+        } else if (path_name == "Past Trajectory" && !viz_options_.show_tmpc_past_trajectory) {
+          continue;
+        }
       }
 
       const auto& path = debug_paths_[path_idx];
       if (path.size() < 2) continue;
 
       ImU32 color = path_idx < path_colors.size() ? path_colors[path_idx] : IM_COL32(255, 255, 255, 255);
-      float line_width = 2.0f + path_idx * 0.5f;  // Different line widths
+      bool is_dashed = path_idx < path_dashed.size() ? path_dashed[path_idx] : false;
+      float line_width = 3.0f;  // Use consistent line width
 
       for (size_t i = 1; i < path.size(); ++i) {
         auto p1 = worldToScreen(path[i-1].x, path[i-1].y);
         auto p2 = worldToScreen(path[i].x, path[i].y);
-        draw_list->AddLine(
-          ImVec2(p1.x, p1.y),
-          ImVec2(p2.x, p2.y),
-          color,
-          line_width
-        );
+
+        if (is_dashed) {
+          // Draw dashed line
+          float dash_length = 10.0f;
+          float gap_length = 5.0f;
+          float total_length = std::sqrt((p2.x - p1.x) * (p2.x - p1.x) + (p2.y - p1.y) * (p2.y - p1.y));
+          float dx = (p2.x - p1.x) / total_length;
+          float dy = (p2.y - p1.y) / total_length;
+
+          float current_length = 0.0f;
+          bool drawing = true;
+
+          while (current_length < total_length) {
+            float segment_length = drawing ? dash_length : gap_length;
+            float end_length = std::min(current_length + segment_length, total_length);
+
+            if (drawing) {
+              ImVec2 dash_start(p1.x + dx * current_length, p1.y + dy * current_length);
+              ImVec2 dash_end(p1.x + dx * end_length, p1.y + dy * end_length);
+              draw_list->AddLine(dash_start, dash_end, color, line_width);
+            }
+
+            current_length = end_length;
+            drawing = !drawing;
+          }
+        } else {
+          // Draw solid line
+          draw_list->AddLine(
+            ImVec2(p1.x, p1.y),
+            ImVec2(p2.x, p2.y),
+            color,
+            line_width
+          );
+        }
       }
     }
   }
@@ -2282,10 +2399,6 @@ void ImGuiVisualizer::renderLegendPanel() {
   ImGui::SameLine();
   ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "[Red]");
 
-  ImGui::Checkbox("Show Main Trajectory", &viz_options_.show_trajectory);
-  ImGui::SameLine();
-  ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "[Cyan - Main Planning Result]");
-
   // Debug paths for JPS planner
   ImGui::Checkbox("Show Debug Paths", &viz_options_.show_debug_paths);
   ImGui::SameLine();
@@ -2317,6 +2430,37 @@ void ImGuiVisualizer::renderLegendPanel() {
     ImGui::SameLine();
     ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "[Cyan - After Main Optimization]");
   }
+  ImGui::Unindent();
+
+  // TMPC Planner debug paths
+  ImGui::Separator();
+  ImGui::Text("TMPC Planner Paths:");
+  ImGui::Indent();
+
+  ImGui::Checkbox("Main Trajectory (Final)", &viz_options_.show_trajectory);
+  ImGui::SameLine();
+  ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "[Cyan - Thick Solid]");
+
+  ImGui::Checkbox("Reference Path", &viz_options_.show_tmpc_reference_path);
+  ImGui::SameLine();
+  ImGui::TextColored(ImVec4(0.4f, 0.4f, 1.0f, 1.0f), "[Blue - Solid]");
+
+  ImGui::Checkbox("Guidance Trajectories", &viz_options_.show_tmpc_guidance_paths);
+  ImGui::SameLine();
+  ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "[Cyan - Dashed]");
+
+  ImGui::Checkbox("MPC Candidates", &viz_options_.show_tmpc_mpc_candidates);
+  ImGui::SameLine();
+  ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.0f, 1.0f), "[Orange - Solid]");
+
+  ImGui::Checkbox("Obstacle Predictions", &viz_options_.show_tmpc_obstacle_predictions);
+  ImGui::SameLine();
+  ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "[Red - Solid]");
+
+  ImGui::Checkbox("Past Trajectory", &viz_options_.show_tmpc_past_trajectory);
+  ImGui::SameLine();
+  ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[Green - Solid]");
+
   ImGui::Unindent();
 
   ImGui::Checkbox("Show BEV Obstacles", &viz_options_.show_bev_obstacles);
@@ -2422,7 +2566,7 @@ void ImGuiVisualizer::renderLegendPanel() {
   if (ImGui::Button("Show All")) {
     viz_options_.show_ego = true;
     viz_options_.show_goal = true;
-    // viz_options_.show_trajectory = true;  // 已移除
+    viz_options_.show_trajectory = true;
     viz_options_.show_debug_paths = true;
     viz_options_.show_raw_jps_path = true;
     viz_options_.show_optimized_path = true;
@@ -2430,6 +2574,11 @@ void ImGuiVisualizer::renderLegendPanel() {
     viz_options_.show_minco_trajectory = true;
     viz_options_.show_minco_stage1_trajectory = true;
     viz_options_.show_minco_stage2_trajectory = true;
+    viz_options_.show_tmpc_reference_path = true;
+    viz_options_.show_tmpc_guidance_paths = true;
+    viz_options_.show_tmpc_mpc_candidates = true;
+    viz_options_.show_tmpc_obstacle_predictions = true;
+    viz_options_.show_tmpc_past_trajectory = true;
     viz_options_.show_bev_obstacles = true;
     viz_options_.show_dynamic_obstacles = true;
     viz_options_.show_occupancy_grid = true;
@@ -2440,7 +2589,7 @@ void ImGuiVisualizer::renderLegendPanel() {
   if (ImGui::Button("Hide All")) {
     viz_options_.show_ego = false;
     viz_options_.show_goal = false;
-    // viz_options_.show_trajectory = false;  // 已移除
+    viz_options_.show_trajectory = false;
     viz_options_.show_debug_paths = false;
     viz_options_.show_raw_jps_path = false;
     viz_options_.show_optimized_path = false;
@@ -2448,6 +2597,11 @@ void ImGuiVisualizer::renderLegendPanel() {
     viz_options_.show_minco_trajectory = false;
     viz_options_.show_minco_stage1_trajectory = false;
     viz_options_.show_minco_stage2_trajectory = false;
+    viz_options_.show_tmpc_reference_path = false;
+    viz_options_.show_tmpc_guidance_paths = false;
+    viz_options_.show_tmpc_mpc_candidates = false;
+    viz_options_.show_tmpc_obstacle_predictions = false;
+    viz_options_.show_tmpc_past_trajectory = false;
     viz_options_.show_bev_obstacles = false;
     viz_options_.show_dynamic_obstacles = false;
     viz_options_.show_occupancy_grid = false;

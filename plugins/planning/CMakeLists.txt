@@ -9,6 +9,7 @@ message(STATUS "--- Configuring Planning Plugins ---")
 option(BUILD_STRAIGHT_LINE_PLANNER_PLUGIN "Build StraightLine planner" ON)
 option(BUILD_JPS_PLANNER_PLUGIN "Build JPS planner" ON)
 option(BUILD_ASTAR_PLANNER_PLUGIN "Build A* planner" ON)
+option(BUILD_TMPC_PLANNER_PLUGIN "Build T-MPC planner" ON)
 
 # ========== 插件列表 ==========
 set(PLANNING_PLUGIN_LIBS "")
@@ -38,6 +39,15 @@ if(BUILD_ASTAR_PLANNER_PLUGIN)
     list(APPEND PLANNING_PLUGIN_LIBS astar_planner_plugin)
 else()
     message(STATUS "  [-] A* planner plugin (disabled)")
+endif()
+
+# T-MPC 规划器
+if(BUILD_TMPC_PLANNER_PLUGIN)
+    message(STATUS "  [+] T-MPC planner plugin")
+    add_subdirectory(t_mpc)
+    list(APPEND PLANNING_PLUGIN_LIBS tmpc_planner_plugin)
+else()
+    message(STATUS "  [-] T-MPC planner plugin (disabled)")
 endif()
 
 # ========== 创建规划器插件聚合库 ==========

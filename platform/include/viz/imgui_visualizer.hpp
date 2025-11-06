@@ -64,6 +64,13 @@ public:
   void drawDebugPaths(const std::vector<std::vector<planning::Pose2d>>& paths,
                       const std::vector<std::string>& path_names,
                       const std::vector<std::string>& colors) override;
+
+  /**
+   * @brief Draw approximation circles for obstacles
+   * @param circles Vector of circles (x, y, radius)
+   */
+  void drawApproximationCircles(const std::vector<std::tuple<double, double, double>>& circles);
+
   void updatePlanningContext(const planning::PlanningContext& context) override;
   void updatePlanningResult(const plugin::PlanningResult& result) override;
   void showDebugInfo(const std::string& key, const std::string& value) override;
@@ -139,6 +146,9 @@ private:
   // Debug paths for multi-stage visualization
   std::vector<std::vector<planning::Pose2d>> debug_paths_;
 
+  // Approximation circles for obstacles (x, y, radius)
+  std::vector<std::tuple<double, double, double>> approximation_circles_;
+
   // 轨迹跟踪数据
   struct TrackingData {
     planning::Pose2d actual_pose;
@@ -193,6 +203,13 @@ private:
     bool show_minco_trajectory = true;      // 显示MINCO最终轨迹（洋红色）
     bool show_minco_stage1_trajectory = true; // 显示MINCO预处理轨迹（橙色）
     bool show_minco_stage2_trajectory = true; // 显示MINCO主优化轨迹（青色）
+
+    // Debug paths for TMPC planner
+    bool show_tmpc_reference_path = true;   // 显示参考路径（蓝色实线）
+    bool show_tmpc_guidance_paths = true;   // 显示引导轨迹（青色虚线）
+    bool show_tmpc_mpc_candidates = true;   // 显示MPC候选轨迹（橙色实线）
+    bool show_tmpc_obstacle_predictions = true; // 显示障碍物预测（红色实线）
+    bool show_tmpc_past_trajectory = true;  // 显示历史轨迹（绿色实线）
   } viz_options_;
 
   // 系统信息

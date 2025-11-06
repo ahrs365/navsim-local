@@ -24,10 +24,10 @@ guidance_planner:
 
   sampling:
     n_samples: 50 #1000 # Max number of samples for PRM
-    timeout: 10 #200 # Timeout for PRM sampling [ms]
+    timeout: 30 #200 # Timeout for PRM sampling [ms]
     margin: 5.0 # [m] sampled outside of goals 
 
-  max_velocity: 3.0 # Maximum velocity of connections between nodes
+  max_velocity: 1.0 # Maximum velocity of connections between nodes
   max_acceleration: 3.0 # Maximum velocity of connections between nodes
   connection_filters:
     forward: false

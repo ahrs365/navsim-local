@@ -299,6 +299,13 @@ bool AlgorithmManager::process(const proto::WorldTick& world_tick,
   context.task = perception_input.task;
   context.dynamic_obstacles = perception_input.dynamic_obstacles;
 
+  // 🔧 复制 BEV 障碍物（静态障碍物）到 context
+  if (!perception_input.bev_obstacles.circles.empty() ||
+      !perception_input.bev_obstacles.rectangles.empty() ||
+      !perception_input.bev_obstacles.polygons.empty()) {
+    context.bev_obstacles = std::make_unique<planning::BEVObstacles>(perception_input.bev_obstacles);
+  }
+
   bool perception_success = perception_plugin_manager_->process(perception_input, context);
 
   auto perception_end = std::chrono::steady_clock::now();
@@ -709,6 +716,13 @@ void AlgorithmManager::performFullReset() {
   // 3. 清空可视化器的缓存数据
   if (visualizer_) {
     std::cout << "[AlgorithmManager] Clearing visualizer cache..." << std::endl;
+
+    // 如果是 ImGuiVisualizer，调用清空所有可视化数据的方法
+    auto* imgui_viz = dynamic_cast<viz::ImGuiVisualizer*>(visualizer_.get());
+    if (imgui_viz) {
+      imgui_viz->clearAllVisualizationData();
+    }
+
     // 发送空的规划结果以清空轨迹显示
     plugin::PlanningResult empty_result;
     empty_result.success = false;

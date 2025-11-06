@@ -1,5 +1,5 @@
 name: "jackal"
-N: 30 # [#] Time Horizon
+N: 50 # [#] Time Horizon
 integrator_step: 0.2 # [s] Integration step
 n_discs: 1 # Number of discs to model the robot with
 
@@ -14,7 +14,7 @@ solver_settings:
   solver: "acados" # acados or forces
   # solver: "forces" # acados or forces
   acados:
-    iterations: 10
+    iterations: 50
     solver_type: SQP_RTI # SQP_RTI (default) or SQP
   forces:
     floating_license: true # Use a floating license (required in a container)
@@ -31,7 +31,7 @@ recording:
   num_experiments: 5 # Stop after this number of experiments
 
 deceleration_at_infeasible: 3.0 # [m/s^2] Deceleration when MPC is infeasible
-max_obstacles: 12 # Max. number of dynamic obstacles
+max_obstacles: 100 # Max. number of dynamic obstacles
 robot_radius: 0.325 # [m] Robot radius (should match robot.width / 2)
 robot:
   length: 0.65 # [m]
@@ -80,13 +80,13 @@ probabilistic:
   propagate_uncertainty: true # Propagate the received uncertainty over time
 
 weights: # Weights of the MPC, need to correspond to declared weights in the solver
-  goal: 1. #10.
+  goal: 1.0 #10.
   goal_x: 1.
   goal_y: 1.
   velocity: 0.55
   acceleration: 0.34
   angular_velocity: 0.85
-  reference_velocity: 2.0 # Reference velocity for MPC (m/s)
+  reference_velocity: 1.0 # Reference velocity for MPC (m/s)
   contour: 0.05
   preview: 0.0
   lag: 0.75

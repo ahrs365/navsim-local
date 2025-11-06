@@ -434,6 +434,68 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  // 🔧 设置仿真控制回调（Start/Reset 按钮）- 在所有变量声明之后
+  // 使用共享指针来标记是否需要重新规划
+  auto need_replan = std::make_shared<bool>(false);
+
+  if (g_visualizer) {
+    auto* imgui_viz = dynamic_cast<viz::ImGuiVisualizer*>(g_visualizer.get());
+    if (imgui_viz) {
+      // 保存初始场景文件路径
+      std::string initial_scenario = args.scenario_file;
+
+      imgui_viz->setSimulationControlCallbacks(
+        // Start 回调：触发重新规划
+        [need_replan]() {
+          std::cout << "\n[Start] Triggering replanning..." << std::endl;
+          *need_replan = true;
+        },
+        nullptr,  // pause_callback (not used in debug mode)
+        // Reset 回调：重新加载初始场景
+        [initial_scenario, &context, &planner_manager, need_replan]() {
+          std::cout << "\n[Reset] Reloading initial scenario: " << initial_scenario << std::endl;
+
+          // 清空所有可视化数据
+          auto* viz = dynamic_cast<viz::ImGuiVisualizer*>(g_visualizer.get());
+          if (viz) {
+            viz->clearAllVisualizationData();
+          }
+
+          // 🔧 清空 context 中的旧场景数据（重要！避免旧数据残留）
+          context = planning::PlanningContext();  // 重置为空的 context
+
+          // 重新加载初始场景
+          if (planning::ScenarioLoader::loadFromFile(initial_scenario, context)) {
+            std::cout << "[Reset] Successfully reloaded scenario" << std::endl;
+            std::cout << "  Ego pose: (" << context.ego.pose.x << ", "
+                      << context.ego.pose.y << ", " << context.ego.pose.yaw << ")" << std::endl;
+            std::cout << "  Goal pose: (" << context.task.goal_pose.x << ", "
+                      << context.task.goal_pose.y << ", " << context.task.goal_pose.yaw << ")" << std::endl;
+
+            // 更新可视化
+            g_visualizer->drawEgo(context.ego);
+            g_visualizer->drawGoal(context.task.goal_pose);
+            if (context.bev_obstacles) {
+              g_visualizer->drawBEVObstacles(*context.bev_obstacles);
+            }
+            g_visualizer->drawDynamicObstacles(context.dynamic_obstacles);
+
+            // 重置规划器
+            planner_manager.reset();
+
+            // 标记需要重新规划
+            *need_replan = true;
+
+            std::cout << "[Reset] Scenario reloaded, click Start to plan" << std::endl;
+          } else {
+            std::cerr << "[Reset] Failed to reload scenario" << std::endl;
+          }
+          std::cout << "[Reset] Done\n" << std::endl;
+        }
+      );
+    }
+  }
+
   // 运行规划
   auto start_time = std::chrono::steady_clock::now();
 
@@ -616,6 +678,70 @@ int main(int argc, char** argv) {
     while (!g_visualizer->shouldClose()) {
       g_visualizer->beginFrame();
 
+      // 🔧 检查场景加载请求（在渲染之前处理，确保新场景立即显示）
+      auto* imgui_viz = dynamic_cast<viz::ImGuiVisualizer*>(g_visualizer.get());
+      if (imgui_viz) {
+        std::string scenario_path;
+        if (imgui_viz->hasScenarioLoadRequest(scenario_path)) {
+          std::cout << "\n[Load Scenario] Request received: " << scenario_path << std::endl;
+
+          // 清空所有可视化数据
+          imgui_viz->clearAllVisualizationData();
+
+          // 🔧 清空 context 中的旧场景数据（重要！避免旧数据残留）
+          context = planning::PlanningContext();  // 重置为空的 context
+
+          // 加载新场景
+          if (planning::ScenarioLoader::loadFromFile(scenario_path, context)) {
+            std::cout << "[Load Scenario] Successfully loaded: " << scenario_path << std::endl;
+            std::cout << "  Ego pose: (" << context.ego.pose.x << ", "
+                      << context.ego.pose.y << ", " << context.ego.pose.yaw << ")" << std::endl;
+            std::cout << "  Goal pose: (" << context.task.goal_pose.x << ", "
+                      << context.task.goal_pose.y << ", " << context.task.goal_pose.yaw << ")" << std::endl;
+
+            // 重置规划器
+            planner_manager.reset();
+
+            // 清空之前的规划结果
+            success = false;
+            result = plugin::PlanningResult();
+
+            // 标记需要重新规划（等待 Start 按钮）
+            *need_replan = true;
+
+            std::cout << "[Load Scenario] Scenario loaded, click Start to plan" << std::endl;
+          } else {
+            std::cerr << "[Load Scenario] Failed to load: " << scenario_path << std::endl;
+          }
+          std::cout << "[Load Scenario] Done\n" << std::endl;
+        }
+      }
+
+      // 🔧 检查是否需要重新规划（Start 按钮或 Reset 按钮触发）
+      if (*need_replan) {
+        *need_replan = false;  // 重置标志
+
+        std::cout << "\n[Planning] Running planner..." << std::endl;
+        auto start_time = std::chrono::steady_clock::now();
+        plugin::PlanningResult new_result;
+        auto deadline = std::chrono::milliseconds(5000);
+        bool plan_success = planner_manager.plan(context, deadline, new_result);
+        auto end_time = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+
+        if (plan_success) {
+          std::cout << "[Planning] Success!" << std::endl;
+          std::cout << "  Trajectory points: " << new_result.trajectory.size() << std::endl;
+          std::cout << "  Computation time: " << duration << " ms" << std::endl;
+          success = true;
+          result = new_result;
+        } else {
+          std::cout << "[Planning] Failed: " << new_result.failure_reason << std::endl;
+          success = false;
+        }
+        std::cout << "[Planning] Done\n" << std::endl;
+      }
+
       // 重新渲染所有数据
       g_visualizer->drawEgo(context.ego);
       g_visualizer->drawGoal(context.task.goal_pose);
@@ -632,6 +758,78 @@ int main(int argc, char** argv) {
 
       if (success) {
         g_visualizer->drawTrajectory(result.trajectory, result.planner_name);
+
+        // 可视化调试路径
+        if (result.metadata.count("has_debug_paths") > 0 &&
+            result.metadata.count("debug_paths_ptr") > 0) {
+          auto* debug_paths_ptr = reinterpret_cast<std::vector<std::vector<planning::Pose2d>>*>(
+              static_cast<uintptr_t>(result.metadata.at("debug_paths_ptr")));
+
+          if (debug_paths_ptr && !debug_paths_ptr->empty()) {
+            std::vector<std::string> path_names;
+            std::vector<std::string> colors;
+
+            if (result.planner_name == "TMPCPlanner") {
+              std::vector<std::string>* path_types_ptr = nullptr;
+              if (result.metadata.count("debug_path_types_ptr") > 0) {
+                path_types_ptr = reinterpret_cast<std::vector<std::string>*>(
+                    static_cast<uintptr_t>(result.metadata.at("debug_path_types_ptr")));
+              }
+
+              if (path_types_ptr && path_types_ptr->size() == debug_paths_ptr->size()) {
+                int guidance_idx = 0;
+                int mpc_idx = 0;
+                int obs_idx = 0;
+
+                for (const auto& type : *path_types_ptr) {
+                  if (type == "guidance") {
+                    path_names.push_back("TMPC Guidance " + std::to_string(guidance_idx++));
+                    colors.push_back("dashed_cyan");
+                  } else if (type == "mpc_candidate") {
+                    path_names.push_back("TMPC MPC Candidate " + std::to_string(mpc_idx++));
+                    colors.push_back("orange");
+                  } else if (type == "reference") {
+                    path_names.push_back("TMPC Reference Path");
+                    colors.push_back("yellow");
+                  } else if (type == "obstacle_prediction") {
+                    path_names.push_back("TMPC Obstacle " + std::to_string(obs_idx++));
+                    colors.push_back("red");
+                  } else if (type == "past_trajectory") {
+                    path_names.push_back("TMPC Past Trajectory");
+                    colors.push_back("gray");
+                  }
+                }
+              }
+            }
+
+            g_visualizer->drawDebugPaths(*debug_paths_ptr, path_names, colors);
+          }
+        }
+
+        // 可视化近似圆
+        if (result.planner_name == "TMPCPlanner" &&
+            result.metadata.count("approximation_circles_ptr") > 0) {
+          struct ApproximationCircle {
+            double x, y, radius;
+          };
+
+          auto* circles_ptr = reinterpret_cast<std::vector<ApproximationCircle>*>(
+              static_cast<uintptr_t>(result.metadata.at("approximation_circles_ptr")));
+
+          if (circles_ptr && !circles_ptr->empty()) {
+            std::vector<std::tuple<double, double, double>> circles;
+            for (const auto& c : *circles_ptr) {
+              circles.emplace_back(c.x, c.y, c.radius);
+            }
+
+            auto* imgui_viz_inner = dynamic_cast<viz::ImGuiVisualizer*>(g_visualizer.get());
+            if (imgui_viz_inner) {
+              imgui_viz_inner->drawApproximationCircles(circles);
+            }
+          }
+        }
+
+        g_visualizer->updatePlanningResult(result);
       }
 
       g_visualizer->endFrame();

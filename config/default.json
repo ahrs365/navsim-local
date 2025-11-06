@@ -146,6 +146,6 @@
   "algorithm": {
     "max_computation_time_ms": 25.0,
     "verbose_logging": false,
-    "goal_hold_distance_": 2.0
+    "goal_hold_distance_": 0.5
   }
 }

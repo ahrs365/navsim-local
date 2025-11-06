@@ -263,6 +263,40 @@ void ImGuiVisualizer::clearHistoryData() {
   history_omega_.clear();
 }
 
+void ImGuiVisualizer::clearAllVisualizationData() {
+  // 清空历史数据
+  clearHistoryData();
+
+  // 清空轨迹
+  trajectory_.clear();
+
+  // 清空调试路径
+  debug_paths_.clear();
+  debug_path_names_.clear();
+  debug_path_colors_.clear();
+
+  // 清空近似圆
+  approximation_circles_.clear();
+
+  // 清空障碍物
+  bev_obstacles_.circles.clear();
+  bev_obstacles_.rectangles.clear();
+  bev_obstacles_.polygons.clear();
+  dynamic_obstacles_.clear();
+
+  // 清空规划结果信息
+  has_planning_result_ = false;
+  last_result_summary_.clear();
+  result_info_.clear();
+  result_info_["Status"] = "Waiting for PlanningResult";
+
+  // 清空上下文信息
+  context_info_.clear();
+  context_info_["Status"] = "Waiting for PlanningContext";
+
+  std::cout << "[ImGuiVisualizer] All visualization data cleared" << std::endl;
+}
+
 void ImGuiVisualizer::drawGoal(const planning::Pose2d& goal) {
   goal_ = goal;
   debug_info_["Goal"] = "x=" + formatDouble(goal.x) +
@@ -1381,7 +1415,7 @@ void ImGuiVisualizer::renderScene() {
     }
   }
 
-  // 🎨 5. 绘制规划轨迹（主轨迹 - 青色粗线）
+  // 🎨 5. 绘制规划轨迹（主轨迹 - 绿色高亮加粗）
   if (viz_options_.show_trajectory && trajectory_.size() > 1) {
     static int traj_log_count = 0;
     if (traj_log_count++ % 60 == 0) {
@@ -1405,8 +1439,8 @@ void ImGuiVisualizer::renderScene() {
       draw_list->AddLine(
         ImVec2(p1.x, p1.y),
         ImVec2(p2.x, p2.y),
-        IM_COL32(0, 255, 255, 255),  // 青色
-        3.0f
+        IM_COL32(0, 255, 0, 255),  // 绿色（高亮）
+        5.0f  // 加粗到 5.0f
       );
     }
   }  // 🎨 结束轨迹绘制
@@ -2046,7 +2080,7 @@ void ImGuiVisualizer::renderDebugPanel() {
   if (reset_clicked) {
     addButtonLog("Reset CLICKED (returned true)");
     std::cout << "[ImGuiVisualizer] Reset button clicked!" << std::endl;
-    clearHistoryData();  // 清空历史数据
+    clearAllVisualizationData();  // 清空所有可视化数据
     if (sim_reset_callback_) {
       sim_reset_callback_();
     }
@@ -2055,7 +2089,7 @@ void ImGuiVisualizer::renderDebugPanel() {
   if (reset_released && !reset_clicked) {
     addButtonLog("Reset MANUAL TRIGGER");
     std::cout << "[ImGuiVisualizer] Reset button manually triggered!" << std::endl;
-    clearHistoryData();  // 清空历史数据
+    clearAllVisualizationData();  // 清空所有可视化数据
     if (sim_reset_callback_) {
       sim_reset_callback_();
     }
@@ -2108,12 +2142,22 @@ void ImGuiVisualizer::renderDebugPanel() {
     std::string filename = scenario_path_input_;
     std::string full_path;
 
-    // 如果用户输入的是绝对路径或包含路径分隔符，直接使用
-    if (filename[0] == '/' || filename.find("scenarios/") == 0) {
+    // 如果用户输入的是绝对路径，直接使用
+    if (filename[0] == '/') {
       full_path = filename;
-    } else {
-      // 否则，在 scenarios/ 目录下查找（相对于当前工作目录）
-      full_path = "scenarios/" + filename;
+    }
+    // 如果用户输入的已经包含 scenarios/ 或 ../scenarios/，直接使用
+    else if (filename.find("scenarios/") == 0 || filename.find("../scenarios/") == 0) {
+      full_path = filename;
+    }
+    // 否则，在 ../scenarios/ 目录下查找（相对于 build 目录）
+    else {
+      full_path = "../scenarios/" + filename;
+    }
+
+    // 🔧 如果文件名没有 .json 后缀，自动添加
+    if (full_path.find(".json") == std::string::npos) {
+      full_path += ".json";
     }
 
     scenario_path_request_ = full_path;
@@ -2125,7 +2169,7 @@ void ImGuiVisualizer::renderDebugPanel() {
     addButtonLog("Load Scenario: " + full_path);
   }
 
-  ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Default dir: scenarios/");
+  ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Default dir: ../scenarios/");
   ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Example: map1.json or map2.json");
   ImGui::Separator();
 
@@ -2439,7 +2483,7 @@ void ImGuiVisualizer::renderLegendPanel() {
 
   ImGui::Checkbox("Main Trajectory (Final)", &viz_options_.show_trajectory);
   ImGui::SameLine();
-  ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "[Cyan - Thick Solid]");
+  ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "[Green - Bold Solid]");
 
   ImGui::Checkbox("Reference Path", &viz_options_.show_tmpc_reference_path);
   ImGui::SameLine();

@@ -118,6 +118,11 @@ public:
    */
   void updateSimulationStatus(bool is_paused);
 
+  /**
+   * @brief 清空所有可视化数据（Reset 时调用）
+   */
+  void clearAllVisualizationData();
+
 private:
   Config config_;
 

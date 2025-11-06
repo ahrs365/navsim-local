@@ -2,8 +2,8 @@
   "name": "map1",
   "timestamp": 1760931907750,
   "startPose": {
-    "x": 0,
-    "y": 0,
+    "x": -2,
+    "y": -1,
     "yaw": 0
   },
   "goalPose": {

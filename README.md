@@ -192,6 +192,8 @@ flowchart LR
 
 <video controls src="docs/assets/tmpc效果展示.mp4" title="Title"></video>
 
+(视频中效果来自：https://github.com/ahrs365/tmpc)
+
 ![alt text](docs/assets/s3.gif) 
 
 ![alt text](docs/assets/map16.gif)

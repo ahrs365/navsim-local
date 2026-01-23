@@ -5,7 +5,7 @@
 
 NavSim Local 是一个面向自动驾驶/移动机器人规划算法研发的“全内环”（perception → planning → control）沙箱平台。它在单进程(便于前期开发，之后版本可能改为多进程)内同时运行仿真器、感知与规划插件框架以及 ImGui/SDL2 可视化前端。项目以插件化设计为核心，开发者可以自由替换或扩展各个阶段的算法组件。
 
-在线场景编辑器（更新升级中，暂时关闭）：[地址](https://www.gl-robotics.com/navsim-online/index.html)
+在线场景编辑器（更新升级中，暂时关闭，可查看新版）：[地址](https://www.gl-robotics.com)
 
 ![alt text](docs/assets/image-6.png)
 

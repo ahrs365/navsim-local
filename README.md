@@ -29,6 +29,8 @@ NavSim Local 是一个面向自动驾驶/移动机器人规划算法研发的“
   <img src="https://github.com/user-attachments/assets/1dbfcc22-3ccd-45f3-b163-977c51c082c2" width="10%" />
 </div>
 
+博客： [gl-robotics](https://www.gl-robotics.com/)
+
 ## 核心特性
 
 - **模块化架构**：独立的预处理流水线、感知插件管理器和规划插件管理器由 `AlgorithmManager` 统一调度。
